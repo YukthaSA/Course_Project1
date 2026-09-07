@@ -1,0 +1,27 @@
+===================================================================
+SYSTEM REQUIREMENT SPECIFICATION (SRS) - DEMO E-COMMERCE PORTAL
+===================================================================
+
+1. USER AUTHENTICATION & SECURITY
+   REQ-001: User Login
+   The system shall allow registered users to log in securely using their email address and password.
+   REQ-002: Invalid Login Error Handling
+   The system shall display a clear error message ("Invalid email or password") when incorrect credentials are submitted and must prevent unauthorized access.
+   REQ-003: Password Masking & Encryption
+   All password input fields must obscure entered characters and enforce HTTPS transmission over TLS 1.3.
+
+2. PRODUCT CATALOG & SEARCH
+   REQ-004: Product Search
+   The system shall provide a search bar allowing users to search products by keyword or category.
+   REQ-005: Out-of-Stock Indication
+   The system must display an "Out of Stock" badge on items with zero inventory and disable the "Add to Cart" button for those items.
+
+3. SHOPPING CART & CHECKOUT
+   REQ-006: Add to Cart
+   The user shall be able to add available products to their shopping cart, updating the cart item count dynamically.
+   REQ-007: Checkout Total Calculation
+   The checkout module shall accurately calculate subtotal, sales tax (8%), shipping costs, and grand total.
+
+4. USER DASHBOARD & PROFILE
+   REQ-008: Order History
+   The system shall display past orders with order status, tracking number, and transaction receipt links.
