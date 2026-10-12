@@ -92,12 +92,23 @@ class DemoServerHandler(BaseHTTPRequestHandler):
         pass  # Quiet logging
 
 def start_demo_server(port=8080):
-    server = HTTPServer(("127.0.0.1", port), DemoServerHandler)
+    ports_to_try = [port, 8888, 8000, 8090, 5050, 0]
+    server = None
+    actual_port = port
+    for p in ports_to_try:
+        try:
+            server = HTTPServer(("127.0.0.1", p), DemoServerHandler)
+            actual_port = server.server_port
+            break
+        except Exception:
+            continue
+    if not server:
+        raise RuntimeError("Could not bind demo server to any available port.")
     thread = threading.Thread(target=server.serve_forever)
     thread.daemon = True
     thread.start()
-    print(f"🚀 Demo Target Web Application running at http://127.0.0.1:{port}")
-    return server
+    print(f"🚀 Demo Target Web Application running at http://127.0.0.1:{actual_port}")
+    return server, actual_port
 
 if __name__ == "__main__":
     start_demo_server(8080)

@@ -7,12 +7,14 @@ from state import AgentState
 from config import config
 import logging
 import json
+import time
 import sys
 import re
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
 
@@ -32,29 +34,29 @@ class BaseAgent(ABC):
         pass
 
     def log_start(self, message: str):
-        self.logger.info(f"[START] {message}")
+        self.logger.info(f"[{self.name}] 🚀 {message}")
 
     def log_success(self, message: str):
-        self.logger.info(f"[SUCCESS] {message}")
+        self.logger.info(f"[{self.name}] ✅ {message}")
 
     def log_error(self, message: str):
-        self.logger.error(f"[ERROR] {message}")
+        self.logger.error(f"[{self.name}] ❌ {message}")
 
     def log_info(self, message: str):
-        self.logger.info(f"[INFO] {message}")
+        self.logger.info(f"[{self.name}] ℹ️ {message}")
 
     def _parse_json_response(self, response_text: str) -> Any:
         """Robustly extract and parse JSON object or array from LLM response"""
         if not response_text:
             return None
-        
+
         # 1. Direct JSON parse
         try:
             return json.loads(response_text.strip())
         except json.JSONDecodeError:
             pass
 
-        # 2. Extract code block ```json ... ```
+        # 2. Extract code block ```json ... ``` or ``` ... ```
         code_block = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", response_text, re.IGNORECASE)
         if code_block:
             try:
@@ -78,6 +80,13 @@ class BaseAgent(ABC):
             except json.JSONDecodeError:
                 pass
 
+        # 5. Fix common trailing commas
+        cleaned = re.sub(r",\s*([\]}])", r"\1", response_text)
+        try:
+            return json.loads(cleaned.strip())
+        except Exception:
+            pass
+
         return None
 
     async def call_llm(
@@ -87,7 +96,7 @@ class BaseAgent(ABC):
         model_name: str = "gemini-2.0-flash",
         mock_fallback: Optional[Callable[[], str]] = None
     ) -> str:
-        """Call LLM API if key is valid; otherwise fallback to mock implementation"""
+        """Call LLM API if key is valid; otherwise fallback to smart deterministic implementation"""
         if self.config.has_valid_google_key:
             try:
                 import google.generativeai as genai
@@ -98,10 +107,10 @@ class BaseAgent(ABC):
                 if response and response.text:
                     return response.text
             except Exception as e:
-                self.log_error(f"Google Gemini call failed: {e}. Falling back to default handler.")
+                self.log_error(f"Google Gemini call failed: {e}. Falling back to deterministic agent handler.")
 
         if mock_fallback:
-            self.log_info("Using fallback response generator")
+            self.log_info("Executing deterministic agent generator")
             return mock_fallback()
 
-        raise RuntimeError(f"No valid API keys available for agent '{self.name}' and no mock fallback provided.")
+        raise RuntimeError(f"No valid API keys available for agent '{self.name}' and no fallback provided.")

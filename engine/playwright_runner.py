@@ -1,5 +1,6 @@
 """
 Playwright Runner Engine - Sandboxed execution engine for generated Playwright automation scripts
+Enhanced with adaptive subprocess timeouts and resilient error capture
 """
 import os
 import sys
@@ -13,8 +14,8 @@ from config import config
 logger = logging.getLogger("Engine.PlaywrightRunner")
 
 class PlaywrightRunner:
-    def __init__(self, timeout: int = 30000):
-        self.timeout = timeout
+    def __init__(self, timeout: int = 15000):
+        self.timeout = max(10000, timeout)
         self.logs_dir = config.LOGS_DIR
         os.makedirs(self.logs_dir, exist_ok=True)
 
@@ -24,7 +25,9 @@ class PlaywrightRunner:
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script_code)
 
-        logger.info(f"▶️ Executing Playwright script at '{script_path}' (Timeout: {self.timeout / 1000}s)...")
+        # Allow sufficient subprocess buffer time (startup + browser launch + execution)
+        subproc_timeout = max(25.0, (self.timeout / 1000.0) + 15.0)
+        logger.info(f"▶️ Executing Playwright script at '{script_path}' (Subprocess Timeout: {subproc_timeout}s)...")
         start_time = time.time()
 
         try:
@@ -33,11 +36,13 @@ class PlaywrightRunner:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 cwd=config.BASE_DIR
             )
 
             try:
-                stdout, stderr = process.communicate(timeout=self.timeout / 1000)
+                stdout, stderr = process.communicate(timeout=subproc_timeout)
             except subprocess.TimeoutExpired:
                 process.kill()
                 stdout, stderr = process.communicate()
@@ -48,8 +53,8 @@ class PlaywrightRunner:
                     "exit_code": -1,
                     "stdout": stdout or "",
                     "stderr": stderr or "Execution timed out",
-                    "error": f"Script execution timed out after {self.timeout / 1000} seconds",
-                    "duration_seconds": duration,
+                    "error": f"Script execution timed out after {subproc_timeout:.1f} seconds",
+                    "duration_seconds": round(duration, 2),
                     "screenshots": self._gather_screenshots()
                 }
 

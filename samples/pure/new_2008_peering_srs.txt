@@ -1,0 +1,73 @@
+===========================================================================
+SYSTEM REQUIREMENTS SPECIFICATION (SRS)
+PROJECT: BGP INTERNET ROUTE PEERING COORDINATOR
+DOMAIN:  Internet Infrastructure & Networking
+SOURCE:  PURE Benchmark Dataset (IEEE RE 2017 / ISTI-CNR)
+===========================================================================
+
+1. SYSTEM OVERVIEW & SCOPE
+   Border Gateway Protocol session negotiation, autonomous system route validation, and prefix filtering.
+
+2. TESTABLE SOFTWARE REQUIREMENTS (20 Specifications)
+---------------------------------------------------------------------------
+
+[REQ-001] [Functional] Priority: Medium
+Requirement: The format for service information description is defined
+
+[REQ-003] [Functional] Priority: Medium
+Requirement: The interaction protocol between Web Server-SR, SR-mediator is defined.
+
+[REQ-004] [Functional] Priority: Medium
+Requirement: Resource provisioning, delegation and reservation policies are in place
+
+[REQ-005] [Functional] Priority: Medium
+Requirement: There is an established norm that any resource failure will be reported
+
+[REQ-007] [Functional] Priority: Medium
+Requirement: Malicious requests are detected and rejected.
+
+[REQ-008] [Functional] Priority: Medium
+Requirement: Web servers have already replicated necessary content.
+
+[REQ-009] [Functional] Priority: Medium
+Requirement: Both anticipated and unanticipated user requests (traffic) are considered.
+
+[REQ-011] [UI] Priority: Medium
+Requirement: The format of service requirements is defined.
+
+[REQ-012] [Functional] Priority: Medium
+Requirement: Mediator-SR, mediator-PR, mediator-PA interaction protocols are defined.
+
+[REQ-013] [Functional] Priority: Medium
+Requirement: Mediator works in conjunction with the PA to establish negotiation.
+
+[REQ-014] [Functional] Priority: Medium
+Requirement: Interaction protocols between PAs are identified.
+
+[REQ-015] [Functional] Priority: Medium
+Requirement: Malicious requests are identified and acted upon.
+
+[REQ-016] [Functional] Priority: Medium
+Requirement: There are existing policies for long-term peering arrangement.
+
+[REQ-017] [Functional] Priority: Medium
+Requirement: There is procedure to perform short-term negotiation.
+
+[REQ-018] [Functional] Priority: Medium
+Requirement: Negotiation is established between selected CDN peers.
+
+[REQ-019] [UI] Priority: Medium
+Requirement: Primary CDN has already acquired sufficient external resources.
+
+[REQ-020] [Functional] Priority: Medium
+Requirement: Functional policies are identified and deployed.
+
+[REQ-021] [Functional] Priority: Medium
+Requirement: Effective content delivery is ensured through SLA satisfaction.
+
+[REQ-022] [Functional] Priority: Medium
+Requirement: Policies identifying the consequences of SLA violation are defined.
+
+[REQ-023] [Functional] Priority: Medium
+Requirement: Policies are in place to perform renegotiation for problem resolution.
+

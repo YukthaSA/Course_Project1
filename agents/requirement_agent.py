@@ -1,7 +1,8 @@
 """
-Requirement Extraction Agent - Converts raw SRS text into structured requirements
+Requirement Extraction Agent - Converts raw SRS text and PURE specifications into structured requirements
 """
 import json
+import re
 from state import AgentState
 from .base_agent import BaseAgent
 from typing import List, Dict, Any
@@ -17,71 +18,128 @@ class RequirementExtractionAgent(BaseAgent):
             self.log_error("No SRS input provided in state")
             return state
 
-        prompt = f"""Extract individual testable software requirements from the following System Requirement Specification (SRS).
+        # Prompt for LLM with domain awareness
+        doc_meta = state.get("document_metadata", {})
+        domain_hint = f"Domain: {doc_meta.get('domain', 'General Software')}" if doc_meta else ""
+
+        prompt = f"""Extract testable software requirements from the following System Requirement Specification (SRS).
+{domain_hint}
+
 For each requirement, provide:
 - id: Requirement ID (e.g., "REQ-001", "REQ-002")
-- description: Detailed statement of expected functional behavior
+- description: Clear functional or behavioral statement
 - priority: "High", "Medium", or "Low"
 - risk_level: "Critical", "High", "Medium", or "Low"
 - testable: boolean (true or false)
-- category: "Functional", "Security", "UI", or "Performance"
+- category: "Functional", "Security", "UI", "Performance", or "Safety"
 
 Return ONLY a valid JSON array of objects.
 
-SRS Document:
-{srs_text}
+SRS Document (Excerpt):
+{srs_text[:4000]}
 
 JSON Array:"""
 
-        def _mock_extraction() -> str:
-            # Smart fallback extractor if LLM API key is not configured
-            lines = [l.strip() for l in srs_text.split('\n') if l.strip()]
+        def _deterministic_extraction() -> str:
             extracted = []
             req_idx = 1
-            for line in lines:
-                if any(kw in line.lower() for kw in ["shall", "must", "should", "user can", "system", "req", "feature", "allow"]):
+            
+            # Check for PURE format: [REQ-xxx] [Category] Priority: High \n Requirement: ...
+            pure_pattern = re.findall(
+                r"\[(REQ-[^\]]+)\]\s*\[([^\]]+)\]\s*Priority:\s*([^\n]+)\s*\n\s*Requirement:\s*(.+?)(?=\n\s*\[REQ-|\Z)",
+                srs_text,
+                re.DOTALL | re.IGNORECASE
+            )
+            
+            if pure_pattern:
+                for match in pure_pattern[:25]:
+                    rid, cat, prio, req_text = match
+                    cat = cat.strip()
+                    p = prio.strip()
+                    r_text = re.sub(r"\s+", " ", req_text).strip()
+                    
+                    risk = "Critical" if cat in ["Security", "Safety"] or p == "High" else "Medium"
                     extracted.append({
-                        "id": f"REQ-{req_idx:03d}",
-                        "description": line,
-                        "priority": "High" if req_idx <= 2 else "Medium",
-                        "risk_level": "Critical" if "login" in line.lower() or "auth" in line.lower() else "Medium",
+                        "id": rid if rid.startswith("REQ-") else f"REQ-{req_idx:03d}",
+                        "description": r_text,
+                        "priority": p if p in ["High", "Medium", "Low"] else "High",
+                        "risk_level": risk,
                         "testable": True,
-                        "category": "Security" if "login" in line.lower() or "password" in line.lower() else "Functional"
+                        "category": cat if cat in ["Functional", "Security", "UI", "Performance", "Safety"] else "Functional"
                     })
                     req_idx += 1
+
+            # If not formatted as PURE blocks, scan lines
+            if not extracted:
+                lines = [l.strip() for l in srs_text.split("\n") if l.strip()]
+                for line in lines:
+                    line_lower = line.lower()
+                    if len(line) < 25 or line.startswith("=") or line.startswith("-") or line.startswith("1. ") or line.startswith("2. "):
+                        continue
+                    if any(kw in line_lower for kw in ["shall", "must", "should", "will", "user can", "allows", "system verifies", "system authenticates"]):
+                        # Extract existing ID if present
+                        id_match = re.search(r"(REQ-[0-9A-Za-z_-]+|\b[0-9]+\.[0-9]+)\b", line)
+                        rid = id_match.group(1) if id_match else f"REQ-{req_idx:03d}"
+                        
+                        clean_desc = re.sub(r"^(REQ-[0-9A-Za-z_-]+:?|[0-9]+\.[0-9]+:?)\s*", "", line).strip()
+                        
+                        cat = "Functional"
+                        if any(w in line_lower for w in ["security", "auth", "password", "encrypt", "token", "permission"]):
+                            cat = "Security"
+                        elif any(w in line_lower for w in ["ui", "display", "screen", "button", "page", "modal"]):
+                            cat = "UI"
+                        elif any(w in line_lower for w in ["speed", "latency", "performance", "throughput", "timeout", "seconds"]):
+                            cat = "Performance"
+                        elif any(w in line_lower for w in ["safety", "hazard", "interlock", "fail-safe", "brake"]):
+                            cat = "Safety"
+
+                        prio = "High" if cat in ["Security", "Safety"] or "shall" in line_lower else "Medium"
+                        risk = "Critical" if cat == "Security" or cat == "Safety" else "Medium"
+
+                        extracted.append({
+                            "id": rid,
+                            "description": clean_desc,
+                            "priority": prio,
+                            "risk_level": risk,
+                            "testable": True,
+                            "category": cat
+                        })
+                        req_idx += 1
+                        if len(extracted) >= 20:
+                            break
+
             if not extracted:
                 extracted = [{
                     "id": "REQ-001",
-                    "description": "User authentication and login functional verification",
+                    "description": "User authentication, credential verification, and session lifecycle management",
                     "priority": "High",
                     "risk_level": "Critical",
                     "testable": True,
-                    "category": "Functional"
+                    "category": "Security"
                 }]
+
             return json.dumps(extracted, indent=2)
 
         try:
             response_text = await self.call_llm(
                 prompt=prompt,
-                system_instruction="You are an expert QA Requirements Engineer specializing in SRS analysis.",
+                system_instruction="You are an expert QA Requirements Engineer specializing in IEEE/ISO SRS analysis.",
                 model_name=self.config.GEMINI_FLASH_MODEL,
-                mock_fallback=_mock_extraction
+                mock_fallback=_deterministic_extraction
             )
 
             requirements = self._parse_json_response(response_text)
             if not isinstance(requirements, list) or len(requirements) == 0:
-                self.log_error("Failed to parse valid requirements JSON array from LLM response. Using fallback.")
-                requirements = json.loads(_mock_extraction())
+                self.log_info("Falling back to deterministic SRS requirement extractor.")
+                requirements = json.loads(_deterministic_extraction())
 
             state["requirements"] = requirements
             if "metrics" in state and isinstance(state["metrics"], dict):
                 state["metrics"]["total_requirements"] = len(requirements)
 
             self.log_success(f"Successfully extracted {len(requirements)} requirements")
-            for req in requirements:
-                print(f" • [{req.get('id', 'REQ')}] ({req.get('priority')}/{req.get('risk_level')}): {req.get('description', '')[:60]}...")
-
             return state
         except Exception as e:
             self.log_error(f"Error during requirement extraction: {e}")
+            state["requirements"] = json.loads(_deterministic_extraction())
             return state

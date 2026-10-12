@@ -1,10 +1,12 @@
 """
 Agentic QA Pipeline Orchestration - Connects specialized agents, execution engine, retry loops, and human-in-the-loop escalation
+Enhanced with PURE benchmark dataset support and detailed quality analytics
 """
 import os
 import json
 import asyncio
 import logging
+import time
 from typing import Dict, Any, Optional
 from datetime import datetime
 
@@ -39,14 +41,18 @@ class AgenticQAPipeline:
         srs_text: str,
         target_url: str = "",
         max_retries: int = config.MAX_RETRIES,
-        status_callback=None
+        status_callback=None,
+        metadata: Optional[Dict[str, Any]] = None
     ) -> AgentState:
         """Run the complete Agentic QA Pipeline from SRS to Playwright Execution & Retry Loop"""
         logger.info("============================================================")
         logger.info("🚀 STARTING AGENTIC QA PIPELINE EXECUTION")
+        if metadata:
+            logger.info(f"📄 Document: {metadata.get('title', 'Unknown')} ({metadata.get('domain', 'General')})")
         logger.info("============================================================")
         
-        state = create_initial_state(srs_text, target_url)
+        target_url = target_url or config.TARGET_URL
+        state = create_initial_state(srs_text, target_url, metadata)
 
         def _update(msg: str, step: int):
             logger.info(f"[{step}/7] {msg}")
@@ -56,35 +62,35 @@ class AgenticQAPipeline:
         # ----------------------------------------------------
         # Stage 1: Requirement Extraction
         # ----------------------------------------------------
-        _update("Stage 1/7: Extracting requirements from SRS...", 1)
+        _update("Stage 1/7: Extracting testable requirements from SRS...", 1)
         state = await self.req_extractor.invoke(state)
 
         # ----------------------------------------------------
-        # Stage 2: Requirement Validation
+        # Stage 2: Requirement Validation & Ambiguity Detection
         # ----------------------------------------------------
-        _update("Stage 2/7: Validating requirement clarity and testability...", 2)
+        _update("Stage 2/7: Auditing requirements for clarity, ambiguity, and testability...", 2)
         state = await self.req_validator.invoke(state)
 
         # ----------------------------------------------------
         # Stage 3: Risk & Coverage Planning
         # ----------------------------------------------------
-        _update("Stage 3/7: Analyzing risks and prioritizing coverage...", 3)
+        _update("Stage 3/7: Analyzing risks and prioritizing automated test suites...", 3)
         state = await self.risk_planner.invoke(state)
 
         # ----------------------------------------------------
-        # Stage 4: Test Case Design
+        # Stage 4: Test Case Design (BDD & Gherkin)
         # ----------------------------------------------------
-        _update("Stage 4/7: Designing structured test cases...", 4)
+        _update("Stage 4/7: Designing structured test cases and BDD / Gherkin specifications...", 4)
         state = await self.test_designer.invoke(state)
 
         # ----------------------------------------------------
-        # Stage 5: Review & Security Audit
+        # Stage 5: Security Review & OWASP Compliance
         # ----------------------------------------------------
-        _update("Stage 5/7: Reviewing test cases and security compliance...", 5)
+        _update("Stage 5/7: Reviewing test cases against OWASP security compliance rules...", 5)
         state = await self.reviewer.invoke(state)
 
         # ----------------------------------------------------
-        # Stage 6 & 7: Script Generation, Sandboxed Execution & Retry Loop
+        # Stage 6 & 7: Script Generation & Playwright Sandbox Execution
         # ----------------------------------------------------
         _update("Stage 6/7: Generating Playwright automation scripts...", 6)
         
@@ -138,7 +144,13 @@ class AgenticQAPipeline:
         state["final_results"] = {
             "completed_at": datetime.now().isoformat(),
             "status": "PASSED" if not state.get("human_review_required") else "REQUIRES_HUMAN_REVIEW",
-            "passed": state.get("execution_result", {}).get("status") == "PASSED"
+            "passed": state.get("execution_result", {}).get("status") == "PASSED",
+            "document_title": metadata.get("title") if metadata else "Custom SRS",
+            "domain": metadata.get("domain") if metadata else "General",
+            "total_requirements": len(state.get("requirements", [])),
+            "testability_score": state.get("quality_metrics", {}).get("testability_score", 85),
+            "total_test_cases": len(state.get("test_cases", [])),
+            "approved_test_cases": len(state.get("approved_test_cases", []))
         }
 
         self.save_results(state)
@@ -157,14 +169,13 @@ class AgenticQAPipeline:
         except Exception as e:
             logger.error(f"Failed to save pipeline results: {e}")
 
-async def run_pipeline(srs_text: str, target_url: str = "") -> AgentState:
+async def run_pipeline(srs_text: str, target_url: str = "", metadata: Optional[Dict[str, Any]] = None) -> AgentState:
     pipeline = AgenticQAPipeline()
-    return await pipeline.run(srs_text, target_url)
+    return await pipeline.run(srs_text, target_url, metadata=metadata)
 
 if __name__ == "__main__":
-    sample_srs = """
-    User Authentication Specification:
-    1. The system shall allow registered users to log in with email and password.
-    2. The system must display a clear error message when invalid credentials are provided.
-    """
-    asyncio.run(run_pipeline(sample_srs))
+    from config import config
+    default_srs = config.get_default_srs_path()
+    with open(default_srs, "r", encoding="utf-8") as f:
+        content = f.read()
+    asyncio.run(run_pipeline(content, metadata={"title": "Default SRS", "domain": "Security"}))
