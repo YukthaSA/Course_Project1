@@ -79,23 +79,28 @@ class RequirementValidationAgent(BaseAgent):
         if not cls._check_normative_verb(desc):
             issues.append("Missing definitive normative verb (shall/must/will)")
 
-        # 4. Performance / latency claim without measurable quantitative threshold
+        # 4. Missing measurable / quantitative criteria
         is_perf_context = (
-            cat in ["performance", "efficiency"] or
-            any(w in desc_lower for w in ["real-time", "real time", "fast", "speed", "latency", "throughput", "response time"])
+            cat in ["performance", "efficiency", "scalability"] or
+            any(w in desc_lower for w in ["real-time", "real time", "fast", "speed", "latency", "throughput", "response time", "scalable", "high capacity", "large volume", "frequently", "periodically", "rapidly"])
         )
-        if is_perf_context and not re.search(r"\b\d+(\.\d+)?\s*(ms|s|sec|second|kb|mb|gb|req|tx|ops|%)", desc_lower):
-            issues.append("Performance/timing claim lacks quantitative threshold (e.g., '< 2 seconds' or '< 200ms')")
+        if is_perf_context and not re.search(r"\b\d+(\.\d+)?\s*(ms|s|sec|second|min|minute|kb|mb|gb|req|tx|ops|%|users|requests)\b", desc_lower):
+            issues.append("Missing measurable criteria — lacks quantitative threshold (e.g., latency, capacity, or throughput limits)")
 
-        # 5. Passive voice construction
+        # 5. External component reference without specification
+        if re.search(r"\b(third[- ]party|external\s+(?:service|system|api|database|server|module|library|tool)|remote\s+(?:server|storage|service)|plugin|extension)\b", desc_lower):
+            if not any(w in desc_lower for w in ["protocol", "format", "schema", "interface", "rest", "grpc", "endpoint", "version", "tls", "contract"]):
+                issues.append("References external component without interface specification, protocol contract, or error recovery")
+
+        # 6. Passive voice construction
         if re.search(r"\b(is|are|was|were|be|been|being)\s+([a-z]+ed|to be)\b", desc_lower):
             issues.append("Uses passive voice — rewrite in active voice specifying the actor")
 
-        # 6. Overly long / compound requirement
+        # 7. Overly long / compound requirement
         if len(desc) > 180 or len(re.split(r",|\band\b|\bor\b", desc_lower)) > 4:
             issues.append("Overly long or compound requirement — consider splitting into atomic requirements")
 
-        # 7. Missing actor / subject
+        # 8. Missing actor / subject
         if not re.search(r"\b(system|user|admin|operator|application|server|client|service|database|browser|engine|keepass|software)\b", desc_lower):
             issues.append("Missing clear actor/subject — specify who or what initiates or performs this action")
 
@@ -105,13 +110,42 @@ class RequirementValidationAgent(BaseAgent):
 
     @staticmethod
     def _detect_coverage_gaps(requirements: List[Dict]) -> List[str]:
-        """Return missing requirement categories compared to EXPECTED_CATEGORIES."""
+        """Detect missing requirement categories and external components referenced without specification."""
+        gaps: List[str] = []
+
+        # 1. External components referenced without dedicated interface or protocol specification
+        ext_patterns = [
+            (r"\b(third[- ]party\s+[a-z]+)\b", "third-party component"),
+            (r"\b(external\s+(?:api|system|service|database|server|module|library|tool))\b", "external dependency"),
+            (r"\b(remote\s+(?:server|storage|service|endpoint))\b", "remote service"),
+            (r"\b(plugin|plug-in|extension|add-on)\b", "plugin architecture"),
+            (r"\b(database|sql|sqlite|db)\b", "database engine"),
+            (r"\b(payment|sms|email|smtp|ldap|sso|oauth)\b", "external integration service"),
+        ]
+
+        for r in requirements:
+            rid = r.get("id", "REQ")
+            desc_lower = r.get("description", "").lower()
+            for pat, comp_name in ext_patterns:
+                m = re.search(pat, desc_lower)
+                if m:
+                    matched_str = m.group(0)
+                    has_spec = any(w in desc_lower for w in ["protocol", "interface", "endpoint", "format", "schema", "timeout", "port", "tls", "rest", "grpc", "version", "contract"])
+                    if not has_spec:
+                        gap_msg = f"{rid}: References external component '{matched_str}' without specifying interface protocol, data format, or error handling"
+                        if gap_msg not in gaps:
+                            gaps.append(gap_msg)
+
+        # 2. Missing categories compared to EXPECTED_CATEGORIES
         present: Set[str] = set()
         for r in requirements:
             cat = r.get("category", "Functional")
             present.add(cat)
         missing = EXPECTED_CATEGORIES - present
-        return [f"No requirements cover '{cat}' — consider adding {cat.lower()} specifications" for cat in sorted(missing)]
+        for cat in sorted(missing):
+            gaps.append(f"No requirements cover '{cat}' — consider adding {cat.lower()} specifications")
+
+        return gaps
 
     @staticmethod
     def _detect_conflicts(requirements: List[Dict]) -> List[Dict[str, str]]:
