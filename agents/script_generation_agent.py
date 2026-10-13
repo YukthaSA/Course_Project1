@@ -41,7 +41,7 @@ Corrective Action: {error_analysis.get('corrective_action', 'Add explicit wait a
 
         prompt = f"""Generate a robust, executable Python test automation script using the Playwright async API against: {target_url}
 
-Approved Test Cases:
+Approved Test Cases (sorted by risk tier, Tier 1 first):
 {tc_summary}
 {error_context}
 
@@ -49,7 +49,7 @@ REQUIREMENTS FOR GENERATED PLAYWRIGHT SCRIPT:
 1. Complete, runnable Python code with imports: `asyncio`, `os`, `sys`, `json`, `playwright.async_api`.
 2. Must run with headless={str(self.config.HEADLESS).lower()} and timeout={self.config.TIMEOUT}.
 3. Navigate to '{target_url}' (with fallback if offline).
-4. Execute actions matching test cases (fill forms, click buttons, assert text or titles).
+4. Execute actions matching test cases in priority order (Tier 1 first), printing each scenario as `[Tier X] <title>`.
 5. Capture screenshot on completion in 'logs/execution_result.png'.
 6. On success, print: JSON_RESULT: {{"status": "PASSED"}}
 7. On failure, print: JSON_RESULT: {{"status": "FAILED", "error": "<error message>"}}
@@ -58,8 +58,8 @@ Return ONLY valid executable Python code in ```python ... ``` block:"""
 
         def _deterministic_script_generator() -> str:
             tc_entries = [
-                f"[Tier {tc.get('tier', '?')}] {tc.get('title', 'Test Scenario')}"
-                for tc in approved_tcs[:6]
+                f"[Tier {tc.get('tier', 2)}] {tc.get('title', 'Test Scenario')}"
+                for tc in approved_tcs
             ]
             titles_repr = json.dumps(tc_entries, indent=4)
             template = '''"""

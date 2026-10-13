@@ -2,6 +2,7 @@
 Risk & Coverage Planning Agent - Analyzes risks, generates 2D risk matrix, and prioritizes test suites
 """
 import json
+import re
 from state import AgentState
 from .base_agent import BaseAgent
 from typing import List, Dict, Any
@@ -120,7 +121,7 @@ Return ONLY valid JSON object:"""
 
             return json.dumps({
                 "high_risk_areas": high_risk_areas,
-                "risk_matrix": risk_matrix[:10],
+                "risk_matrix": risk_matrix,
                 "testing_priorities": priorities
             }, indent=2)
 
@@ -139,22 +140,34 @@ Return ONLY valid JSON object:"""
             state["high_risk_areas"] = plan_data.get("high_risk_areas", ["Security Integrity", "Core Business Flow"])
             raw_matrix = plan_data.get("risk_matrix", [])
             # Backfill requirement_id / tier / risk_level if the LLM omitted them
-            for entry in raw_matrix:
-                if "tier" not in entry:
-                    sev = entry.get("severity", "Medium")
-                    if sev == "Critical":
+            for idx, entry in enumerate(raw_matrix):
+                sev = str(entry.get("severity", "Medium")).strip()
+                if "risk_level" not in entry or not entry.get("risk_level"):
+                    entry["risk_level"] = sev if sev else "Medium"
+                if "tier" not in entry or entry.get("tier") is None:
+                    if sev.lower() == "critical":
                         entry["tier"] = 1
-                    elif sev in ("High",):
+                    elif sev.lower() in ("high",):
                         entry["tier"] = 2
                     else:
                         entry["tier"] = 3
-                if "risk_level" not in entry:
-                    entry["risk_level"] = entry.get("severity", "Medium")
-                if "requirement_id" not in entry:
-                    # Try to extract from the area string (e.g. "REQ-001 - Security Module")
+                else:
+                    try:
+                        entry["tier"] = int(entry["tier"])
+                    except (ValueError, TypeError):
+                        entry["tier"] = 2
+
+                if "requirement_id" not in entry or not entry.get("requirement_id"):
                     area = entry.get("area", "")
-                    parts = area.split(" - ")
-                    entry["requirement_id"] = parts[0].strip() if parts else ""
+                    m = re.search(r"REQ[-_]?\d+", area, re.IGNORECASE)
+                    if m:
+                        entry["requirement_id"] = m.group(0).upper()
+                    else:
+                        parts = area.split(" - ")
+                        entry["requirement_id"] = parts[0].strip() if parts and parts[0].strip() else (
+                            validated_reqs[idx].get("id") if idx < len(validated_reqs) else f"REQ-{idx+1:03d}"
+                        )
+
             state["risk_matrix"] = raw_matrix
             state["testing_priorities"] = plan_data.get("testing_priorities", [])
             state["test_plan"] = {
@@ -171,4 +184,9 @@ Return ONLY valid JSON object:"""
             state["high_risk_areas"] = fallback["high_risk_areas"]
             state["risk_matrix"] = fallback["risk_matrix"]
             state["testing_priorities"] = fallback["testing_priorities"]
+            state["test_plan"] = {
+                "total_high_risk_items": len(state["high_risk_areas"]),
+                "coverage_goal": "100% of Tier 1 & Tier 2 Requirements",
+                "recommended_execution_mode": "Automated End-to-End Playwright Suite"
+            }
             return state

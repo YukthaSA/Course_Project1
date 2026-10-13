@@ -33,6 +33,10 @@ class AgentState(TypedDict, total=False):
     current_script: Optional[str]
     all_scripts: Optional[Dict[str, str]]
     execution_result: Optional[Dict[str, Any]]
+
+    # Per-Test-Case Results & Requirement Traceability
+    test_results: Optional[List[Dict[str, Any]]]       # individual test outcomes
+    traceability: Optional[List[Dict[str, Any]]]        # requirement → test → status mapping
     
     # Failure Analysis & Retry Control
     error_analysis: Optional[Dict[str, Any]]
@@ -80,6 +84,8 @@ def create_initial_state(srs_text: str, target_url: str = "", metadata: Optional
             "compliance_score": 100
         },
         "all_scripts": {},
+        "test_results": [],
+        "traceability": [],
         "retry_count": 0,
         "human_review_required": False,
         "retry_history": [],

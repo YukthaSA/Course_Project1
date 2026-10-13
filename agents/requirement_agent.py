@@ -22,16 +22,23 @@ class RequirementExtractionAgent(BaseAgent):
         doc_meta = state.get("document_metadata", {})
         domain_hint = f"Domain: {doc_meta.get('domain', 'General Software')}" if doc_meta else ""
 
-        prompt = f"""Extract testable software requirements from the following System Requirement Specification (SRS).
+        prompt = f"""Extract ONLY individually testable software requirements from the following SRS document.
 {domain_hint}
+
+IMPORTANT RULES:
+- SKIP introductory paragraphs, document overviews, tables of contents, and summary sections.
+- SKIP any text that merely describes the document structure or lists section headings.
+- Each requirement MUST describe a single, concrete, testable behavior or capability.
+- If a block of text contains multiple requirements, split them into separate entries.
 
 For each requirement, provide:
 - id: Requirement ID (e.g., "REQ-001", "REQ-002")
-- description: Clear functional or behavioral statement
+- description: Clear functional or behavioral statement (one sentence, max 200 words)
 - priority: "High", "Medium", or "Low"
-- risk_level: "Critical", "High", "Medium", or "Low"
 - testable: boolean (true or false)
 - category: "Functional", "Security", "UI", "Performance", or "Safety"
+
+Do NOT assign risk_level — that is handled by a separate Risk Analysis agent.
 
 Return ONLY a valid JSON array of objects.
 
@@ -40,32 +47,79 @@ SRS Document (Excerpt):
 
 JSON Array:"""
 
+        def _is_overview_text(text: str) -> bool:
+            """Filter out introductory paragraphs, TOCs, and summaries that aren't individual requirements."""
+            text_lower = text.lower().strip()
+            word_count = len(text.split())
+            # Too long — likely a preamble paragraph or TOC dump
+            if word_count > 150:
+                return True
+            # Starts with "this document describes" or "the following requirements"
+            if any(text_lower.startswith(p) for p in [
+                "this document describes", "this document provides",
+                "the following requirements describe", "the following high-level",
+                "the purpose of this document",
+            ]):
+                return True
+            # Contains multiple section references (e.g., "2.1 ... 2.2 ... 2.3 ...")
+            section_refs = re.findall(r"\b\d+\.\d+\b", text)
+            if len(section_refs) >= 4:
+                return True
+            return False
+
+        def _correct_category(text: str, original_cat: str) -> str:
+            """Re-classify category based on requirement content keywords."""
+            t = text.lower()
+            if any(w in t for w in ["security", "auth", "password", "encrypt", "token", "permission",
+                                     "unauthorized", "sabotage", "protection", "privacy", "fraudulent"]):
+                return "Security"
+            if any(w in t for w in ["performance", "speed", "latency", "throughput", "timeout",
+                                     "response time", "scalab"]):
+                return "Performance"
+            if any(w in t for w in ["safety", "hazard", "interlock", "fail-safe", "brake"]):
+                return "Safety"
+            if any(w in t for w in ["display", "screen", "button", "page", "modal", "user interface",
+                                     "layout", "form field", "dropdown"]):
+                return "UI"
+            # Data capture, system behavior, integration → Functional (not UI)
+            if any(w in t for w in ["capture data", "must have the capability", "data requirements",
+                                     "exchange", "integration", "configur", "deploy", "synchroniz"]):
+                return "Functional"
+            if original_cat in ["Functional", "Security", "UI", "Performance", "Safety"]:
+                return original_cat
+            return "Functional"
+
         def _deterministic_extraction() -> str:
             extracted = []
             req_idx = 1
-            
+
             # Check for PURE format: [REQ-xxx] [Category] Priority: High \n Requirement: ...
             pure_pattern = re.findall(
                 r"\[(REQ-[^\]]+)\]\s*\[([^\]]+)\]\s*Priority:\s*([^\n]+)\s*\n\s*Requirement:\s*(.+?)(?=\n\s*\[REQ-|\Z)",
                 srs_text,
                 re.DOTALL | re.IGNORECASE
             )
-            
+
             if pure_pattern:
-                for match in pure_pattern[:25]:
+                for match in pure_pattern[:40]:
                     rid, cat, prio, req_text = match
                     cat = cat.strip()
                     p = prio.strip()
                     r_text = re.sub(r"\s+", " ", req_text).strip()
-                    
-                    risk = "Critical" if cat in ["Security", "Safety"] or p == "High" else "Medium"
+
+                    # Skip overview/preamble paragraphs
+                    if _is_overview_text(r_text):
+                        continue
+
+                    # Fix misclassified categories
+                    cat = _correct_category(r_text, cat)
+
                     extracted.append({
                         "id": rid if rid.startswith("REQ-") else f"REQ-{req_idx:03d}",
                         "description": r_text,
-                        "priority": p if p in ["High", "Medium", "Low"] else "High",
-                        "risk_level": risk,
+                        "priority": p if p in ["High", "Medium", "Low"] else "Medium",
                         "testable": True,
-                        "category": cat if cat in ["Functional", "Security", "UI", "Performance", "Safety"] else "Functional"
+                        "category": cat
                     })
                     req_idx += 1
 
@@ -94,18 +148,21 @@ JSON Array:"""
                             cat = "Safety"
 
                         prio = "High" if cat in ["Security", "Safety"] or "shall" in line_lower else "Medium"
-                        risk = "Critical" if cat == "Security" or cat == "Safety" else "Medium"
+
+                        # Skip overview text in line-scan mode too
+                        if _is_overview_text(clean_desc):
+                            continue
+                        cat = _correct_category(clean_desc, cat)
 
                         extracted.append({
                             "id": rid,
                             "description": clean_desc,
                             "priority": prio,
-                            "risk_level": risk,
                             "testable": True,
                             "category": cat
                         })
                         req_idx += 1
-                        if len(extracted) >= 20:
+                        if len(extracted) >= 30:
                             break
 
             if not extracted:
@@ -113,7 +170,6 @@ JSON Array:"""
                     "id": "REQ-001",
                     "description": "User authentication, credential verification, and session lifecycle management",
                     "priority": "High",
-                    "risk_level": "Critical",
                     "testable": True,
                     "category": "Security"
                 }]

@@ -62,18 +62,44 @@ class PlaywrightRunner:
             exit_code = process.returncode
 
             # Parse JSON_RESULT from stdout if emitted by script
-            status = "PASSED" if exit_code == 0 else "FAILED"
+            json_result_found = False
+            status = "FAILED"  # Default to FAILED — must be explicitly PASSED
             error_message = None
-            
+            test_results = []  # Per-test-case results list
+
             for line in stdout.splitlines():
                 if "JSON_RESULT:" in line:
                     try:
                         json_str = line.split("JSON_RESULT:")[1].strip()
                         result_data = json.loads(json_str)
-                        status = result_data.get("status", status)
-                        error_message = result_data.get("error", None)
+                        json_result_found = True
+
+                        # Support both single result and per-test-case list
+                        if isinstance(result_data, list):
+                            test_results = result_data
+                            # Overall status: PASSED only if all individual tests passed
+                            if not test_results:
+                                status = "FAILED_NO_TESTS"
+                                error_message = "Script ran but produced zero test results"
+                            elif all(r.get("status") == "PASSED" for r in test_results):
+                                status = "PASSED"
+                            else:
+                                status = "FAILED"
+                                failed = [r for r in test_results if r.get("status") != "PASSED"]
+                                error_message = f"{len(failed)}/{len(test_results)} test cases failed"
+                        else:
+                            status = result_data.get("status", "FAILED")
+                            error_message = result_data.get("error", None)
                     except Exception:
                         pass
+
+            # Guard: if exit_code==0 but no JSON_RESULT was emitted, treat as inconclusive
+            if not json_result_found:
+                if exit_code == 0:
+                    status = "FAILED_NO_TESTS"
+                    error_message = "Script exited cleanly but did not emit JSON_RESULT — no tests verified"
+                else:
+                    error_message = stderr.strip() or f"Process exited with non-zero code {exit_code}"
 
             if exit_code != 0 and not error_message:
                 error_message = stderr.strip() or f"Process exited with non-zero code {exit_code}"
@@ -92,7 +118,8 @@ class PlaywrightRunner:
                 "stderr": stderr,
                 "error": error_message,
                 "duration_seconds": round(duration, 2),
-                "screenshots": screenshots
+                "screenshots": screenshots,
+                "test_results": test_results
             }
 
         except Exception as e:

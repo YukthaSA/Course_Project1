@@ -6,12 +6,14 @@ import streamlit as st
 import asyncio
 import os
 import json
+import re
 import time
 from datetime import datetime
+import plotly.express as px
 
 from config import config
 from state import AgentState
-from pipeline import AgenticQAPipeline
+from pipeline import AgenticQAPipeline, build_traceability
 
 st.set_page_config(
     page_title="Agentic QA - PURE Benchmark Framework",
@@ -284,14 +286,18 @@ if state:
 
             # Coverage gap summary
             coverage_gaps = q_metrics.get("coverage_gaps", [])
+            conflicts = q_metrics.get("conflicts", [])
+            dup_pairs = q_metrics.get("duplicate_pairs", {})
+            rewrites = q_metrics.get("suggested_rewrites", [])
+
             if coverage_gaps:
                 st.write(f"**Coverage Gaps:** {len(coverage_gaps)}")
-            conflicts = q_metrics.get("conflicts", [])
             if conflicts:
                 st.write(f"**Conflicts Found:** {len(conflicts)}")
-            dup_pairs = q_metrics.get("duplicate_pairs", {})
             if dup_pairs:
                 st.write(f"**Duplicate Pairs:** {len(dup_pairs)}")
+            if rewrites:
+                st.write(f"**Suggested Rewrites:** {len(rewrites)}")
 
         with col_q2:
             st.write("**Ambiguity & Smell Findings:**")
@@ -302,17 +308,38 @@ if state:
             else:
                 st.success("✅ No severe ambiguity or vague qualifiers detected in specifications.")
 
+        # Horizontal bar chart of each requirement's testability_score
+        if val_reqs:
+            st.divider()
+            st.write("**📊 Requirement Testability Score Distribution:**")
+            req_ids = [r.get("id", f"REQ-{i+1}") for i, r in enumerate(val_reqs)]
+            scores = [r.get("testability_score", 80) for r in val_reqs]
+            colors = [
+                "green" if s >= 80 else ("yellow" if s >= 60 else "red")
+                for s in scores
+            ]
+            fig_qual = px.bar(
+                x=scores,
+                y=req_ids,
+                orientation="h",
+                labels={"x": "Testability Score (%)", "y": "Requirement ID"},
+                title="Requirement Testability Scores"
+            )
+            fig_qual.update_traces(marker_color=colors)
+            fig_qual.update_layout(height=max(320, len(val_reqs) * 22), yaxis={"autorange": "reversed"})
+            st.plotly_chart(fig_qual, use_container_width=True)
+
         # Coverage Gaps Section
         if coverage_gaps:
             st.divider()
-            st.write("**🕳️ Missing Requirement Categories:**")
+            st.write("**🕳️ Missing Requirement Categories (Coverage Gaps):**")
             for gap in coverage_gaps:
                 st.error(f"🔻 {gap}")
 
         # Conflicts Section
         if conflicts:
             st.divider()
-            st.write("**⚔️ Conflicting Requirements:**")
+            st.write("**⚔️ Conflicting Requirements (Contradictions):**")
             for c in conflicts:
                 st.warning(f"⚠️ **{c.get('req_a')}** ↔ **{c.get('req_b')}**: {c.get('reason', 'Potential contradiction')}")
 
@@ -324,68 +351,167 @@ if state:
                 st.info(f"🔄 **{req_id}** is similar to: {', '.join(similar_ids)}")
 
         # Suggested Rewrites Section
-        rewrites = q_metrics.get("suggested_rewrites", [])
         if rewrites:
             st.divider()
             st.write("**✏️ Suggested Rewrites for Ambiguous Requirements:**")
             for rw in rewrites:
-                with st.expander(f"Rewrite for {rw.get('id', '?')}"):
+                req_label = rw.get('id', '?')
+                with st.expander(f"Rewrite for {req_label}"):
+                    if rw.get("original"):
+                        st.caption(f"**Original:** {rw.get('original')}")
                     st.code(rw.get("rewrite", ""), language=None)
 
     with tab3:
         st.subheader("⚠️ 2D Risk Assessment & Coverage Matrix")
         risk_matrix = state.get("risk_matrix", [])
         if risk_matrix:
-            # Show a cleaner table with tier, requirement_id, severity, risk_score
-            rm_table = []
+            # Bar chart showing count of risk_matrix entries per severity level colored red/orange/yellow/green
+            sev_levels = ["Critical", "High", "Medium", "Low"]
+            sev_counts = {s: 0 for s in sev_levels}
             for entry in risk_matrix:
+                s = str(entry.get("severity", "Medium")).strip().capitalize()
+                if s in sev_counts:
+                    sev_counts[s] += 1
+                else:
+                    sev_counts[s] = 1
+
+            fig_risk = px.bar(
+                x=list(sev_counts.keys()),
+                y=list(sev_counts.values()),
+                color=list(sev_counts.keys()),
+                color_discrete_map={
+                    "Critical": "red",
+                    "High": "orange",
+                    "Medium": "yellow",
+                    "Low": "green"
+                },
+                labels={"x": "Severity Level", "y": "Count"},
+                title="Risk Matrix Entries by Severity Level"
+            )
+            fig_risk.update_layout(showlegend=False, height=320)
+            st.plotly_chart(fig_risk, use_container_width=True)
+
+            # Build structured table with columns: Tier, Req ID, Area, Severity, Likelihood, Risk Score, Mitigation
+            rm_table = []
+            for idx, entry in enumerate(risk_matrix):
+                rid = entry.get("requirement_id")
+                if not rid or rid == "—":
+                    area = entry.get("area", "")
+                    m = re.search(r"REQ[-_]?\d+", area, re.IGNORECASE)
+                    if m:
+                        rid = m.group(0).upper()
+                    else:
+                        rid = area.split(" - ")[0].strip() if " - " in area else (
+                            reqs[idx].get("id") if idx < len(reqs) else f"REQ-{idx+1:03d}"
+                        )
+
+                raw_tier = entry.get("tier")
+                if raw_tier is None or raw_tier == "—":
+                    sev = str(entry.get("severity", "Medium")).lower()
+                    tier = 1 if sev == "critical" else (2 if sev == "high" else 3)
+                else:
+                    try:
+                        tier = int(raw_tier)
+                    except (ValueError, TypeError):
+                        tier = 2
+
                 rm_table.append({
-                    "Tier": entry.get("tier", "—"),
-                    "Req ID": entry.get("requirement_id", "—"),
+                    "Tier": tier,
+                    "Req ID": rid,
                     "Area": entry.get("area", ""),
                     "Severity": entry.get("severity", ""),
                     "Likelihood": entry.get("likelihood", ""),
                     "Risk Score": entry.get("risk_score", ""),
                     "Mitigation": entry.get("mitigation", ""),
                 })
-            # Sort by tier
+
+            # Sort by tier numerically
             rm_table.sort(key=lambda x: x.get("Tier", 9) if isinstance(x.get("Tier"), int) else 9)
             st.dataframe(rm_table, use_container_width=True)
+        else:
+            st.info("No risk matrix available. Run the pipeline to generate risk assessment.")
 
+        st.divider()
         st.subheader("🎯 Prioritized Test Suites")
         priorities = state.get("testing_priorities", [])
         tier_colors = {
             "Tier 1": "🔴", "Tier 2": "🟡", "Tier 3": "🟢",
         }
-        for p in priorities:
-            tier_str = p.get("tier", "")
-            icon = next((v for k, v in tier_colors.items() if k in tier_str), "⚪")
-            st.markdown(f"{icon} **{tier_str}**: {p.get('focus')}")
-            st.caption(f"Target Requirements: {', '.join(p.get('target_requirements', []))}")
+        if priorities:
+            for p in priorities:
+                tier_str = p.get("tier", "")
+                icon = next((v for k, v in tier_colors.items() if k in tier_str), "⚪")
+                st.markdown(f"{icon} **{tier_str}**: {p.get('focus')}")
+                st.caption(f"Target Requirements: {', '.join(p.get('target_requirements', []))}")
+        else:
+            st.info("No testing priorities defined.")
 
     with tab4:
         st.subheader("🧪 Generated Test Cases & BDD (Gherkin) Scenarios")
-        tier_icons = {1: "🔴 Tier 1 — Smoke / Blocker", 2: "🟡 Tier 2 — Core Business Logic", 3: "🟢 Tier 3 — Edge Cases & UI"}
 
-        # Group test cases by tier
-        tcs_by_tier: dict = {}
-        for tc in tcs:
-            t = tc.get("tier", 2)
-            tcs_by_tier.setdefault(t, []).append(tc)
+        if tcs:
+            # Pie chart at the top showing test case count per tier colored red/gold/green
+            tier_pie_counts = {"Tier 1": 0, "Tier 2": 0, "Tier 3": 0}
+            for tc in tcs:
+                raw_t = tc.get("tier", 2)
+                try:
+                    t_val = int(raw_t)
+                except (ValueError, TypeError):
+                    t_val = 2
+                lbl = f"Tier {t_val}"
+                tier_pie_counts[lbl] = tier_pie_counts.get(lbl, 0) + 1
 
-        for tier_num in sorted(tcs_by_tier.keys()):
-            tier_label = tier_icons.get(tier_num, f"⚪ Tier {tier_num}")
-            st.markdown(f"### {tier_label}  ({len(tcs_by_tier[tier_num])} tests)")
-            for tc in tcs_by_tier[tier_num]:
-                with st.expander(f"[{tc.get('id')}] {tc.get('title')} ({tc.get('type')})"):
-                    st.write(f"**Mapped Requirement:** `{tc.get('requirement_id')}`  |  **Tier:** {tc.get('tier', '—')}")
-                    st.write(f"**Preconditions:** {tc.get('preconditions')}")
-                    st.write("**Steps:**")
-                    for s in tc.get("steps", []):
-                        st.write(f"- {s}")
-                    st.write(f"**Expected Result:** {tc.get('expected_result')}")
-                    if tc.get("gherkin"):
-                        st.code(tc.get("gherkin"), language="gherkin")
+            fig_tier = px.pie(
+                names=list(tier_pie_counts.keys()),
+                values=list(tier_pie_counts.values()),
+                color=list(tier_pie_counts.keys()),
+                color_discrete_map={
+                    "Tier 1": "red",
+                    "Tier 2": "gold",
+                    "Tier 3": "green"
+                },
+                title="Test Case Breakdown by Tier"
+            )
+            fig_tier.update_layout(height=320)
+            st.plotly_chart(fig_tier, use_container_width=True)
+
+            # Group test cases by tier
+            tcs_by_tier = {}
+            for tc in tcs:
+                t = tc.get("tier", 2)
+                try:
+                    t = int(t)
+                except (ValueError, TypeError):
+                    t = 2
+                tcs_by_tier.setdefault(t, []).append(tc)
+
+            tier_header_map = {
+                1: "🔴 Tier 1 — Smoke / Blocker",
+                2: "🟡 Tier 2 — Core Business Logic",
+                3: "🟢 Tier 3 — Edge Cases & UI"
+            }
+
+            for tier_key in sorted(tcs_by_tier.keys()):
+                header_prefix = tier_header_map.get(tier_key, f"⚪ Tier {tier_key}")
+                count = len(tcs_by_tier[tier_key])
+                st.markdown(f"### {header_prefix} ({count} tests)")
+
+                for tc in tcs_by_tier[tier_key]:
+                    tc_id = tc.get('id', 'TC')
+                    req_id = tc.get('requirement_id', 'REQ')
+                    title = tc.get('title', 'Scenario')
+                    ttype = tc.get('type', 'Positive')
+                    with st.expander(f"[{tc_id}] {title} ({ttype} | Tier {tier_key})"):
+                        st.write(f"**Mapped Requirement:** `{req_id}`  |  **Tier:** Tier {tier_key}")
+                        st.write(f"**Preconditions:** {tc.get('preconditions', 'Application in ready state')}")
+                        st.write("**Steps:**")
+                        for s in tc.get("steps", []):
+                            st.write(f"- {s}")
+                        st.write(f"**Expected Result:** {tc.get('expected_result', 'N/A')}")
+                        if tc.get("gherkin"):
+                            st.code(tc.get("gherkin"), language="gherkin")
+        else:
+            st.info("No test cases generated yet.")
 
     with tab5:
         st.subheader("🛡️ OWASP Security Review & Hardening")
@@ -408,6 +534,33 @@ if state:
         st.write(f"**Final Status:** {exec_res.get('status', 'N/A')}")
         st.write(f"**Duration:** {exec_res.get('duration_seconds', 0)} seconds")
 
+        # Donut chart showing passed vs failed test count if execution results exist
+        exec_counts = {}
+        if state.get("test_results"):
+            t_res = state.get("test_results", [])
+            p_count = sum(1 for r in t_res if r.get("status") == "PASSED")
+            f_count = sum(1 for r in t_res if r.get("status") != "PASSED")
+            if p_count > 0 or f_count > 0:
+                exec_counts = {"Passed": p_count, "Failed": f_count}
+        elif exec_res and exec_res.get("status") != "NOT_RUN":
+            st_code = exec_res.get("status")
+            if st_code == "PASSED":
+                exec_counts = {"Passed": len(app_tcs) or 1, "Failed": 0}
+            elif st_code in ("FAILED", "ERROR"):
+                exec_counts = {"Passed": 0, "Failed": 1}
+
+        if exec_counts:
+            fig_donut = px.pie(
+                names=list(exec_counts.keys()),
+                values=list(exec_counts.values()),
+                color=list(exec_counts.keys()),
+                color_discrete_map={"Passed": "green", "Failed": "red"},
+                hole=0.4,
+                title="Execution Results (Pass vs Fail)"
+            )
+            fig_donut.update_layout(height=320)
+            st.plotly_chart(fig_donut, use_container_width=True)
+
         # Display execution screenshot if generated
         screenshot_path = os.path.join(config.LOGS_DIR, "execution_result.png")
         if os.path.exists(screenshot_path):
@@ -425,6 +578,10 @@ if state:
         traceability = state.get("traceability", [])
         test_results = state.get("test_results", [])
 
+        # If traceability was not previously generated in cached state, compute on the fly
+        if not traceability and (reqs or tcs):
+            traceability = build_traceability(reqs, tcs, test_results)
+
         if traceability:
             # Summary metrics
             total_reqs = len(set(t["requirement_id"] for t in traceability))
@@ -436,22 +593,22 @@ if state:
             with tc1:
                 st.metric("Total Requirements", total_reqs)
             with tc2:
-                st.metric("Verified", verified, delta=None)
+                st.metric("Verified", verified)
             with tc3:
-                st.metric("Failed", failed, delta=None)
+                st.metric("Failed", failed)
             with tc4:
-                st.metric("Not Covered", not_covered, delta=None)
+                st.metric("Not Covered", not_covered)
 
             if total_reqs > 0:
                 coverage_pct = round((verified / total_reqs) * 100, 1)
-                st.progress(coverage_pct / 100, text=f"Requirement Coverage: {coverage_pct}%")
+                st.progress(min(1.0, coverage_pct / 100.0), text=f"Requirement Coverage: {coverage_pct}%")
 
             st.divider()
 
             # Color-coded status display
             display_data = []
             for t in traceability:
-                status = t["status"]
+                status = t.get("status", "NOT_COVERED")
                 if status == "VERIFIED":
                     badge = "🟢 VERIFIED"
                 elif status == "FAILED":
@@ -461,10 +618,10 @@ if state:
                 else:
                     badge = "🟡 PARTIAL"
                 display_data.append({
-                    "Requirement": t["requirement_id"],
-                    "Description": t["requirement_desc"],
-                    "Test Case": t["test_case_id"],
-                    "Test Title": t["test_title"],
+                    "Requirement": t.get("requirement_id", "—"),
+                    "Description": t.get("requirement_desc", ""),
+                    "Test Case": t.get("test_case_id", "—"),
+                    "Test Title": t.get("test_title", "—"),
                     "Status": badge
                 })
             st.dataframe(display_data, use_container_width=True)

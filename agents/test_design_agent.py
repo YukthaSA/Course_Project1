@@ -16,6 +16,8 @@ TIER_TEST_TYPES: Dict[int, List[str]] = {
 
 
 class TestDesignAgent(BaseAgent):
+    __test__ = False
+
     def __init__(self, model_client=None):
         super().__init__("Test_Design", model_client)
 
@@ -91,7 +93,7 @@ Return ONLY valid JSON array:"""
             def _req_tier(r: dict) -> int:
                 return tier_lookup.get(r.get("id", ""), 2)
 
-            sorted_reqs = sorted(reqs[:15], key=_req_tier)
+            sorted_reqs = sorted(reqs, key=_req_tier)
 
             for r in sorted_reqs:
                 rid = r.get("id", f"REQ-{tc_num:03d}")
@@ -133,6 +135,11 @@ Return ONLY valid JSON array:"""
             for tc in tc_list:
                 if "tier" not in tc or tc["tier"] is None:
                     tc["tier"] = tier_lookup.get(tc.get("requirement_id", ""), 2)
+                else:
+                    try:
+                        tc["tier"] = int(tc["tier"])
+                    except (ValueError, TypeError):
+                        tc["tier"] = tier_lookup.get(tc.get("requirement_id", ""), 2)
 
             # --- Sort by tier (Tier 1 first) ---
             tc_list.sort(key=lambda tc: tc.get("tier", 2))
@@ -152,8 +159,14 @@ Return ONLY valid JSON array:"""
         except Exception as e:
             self.log_error(f"Error designing test cases: {e}")
             fallback = json.loads(_deterministic_test_designer())
+            for tc in fallback:
+                if "tier" not in tc or tc["tier"] is None:
+                    tc["tier"] = tier_lookup.get(tc.get("requirement_id", ""), 2)
+            fallback.sort(key=lambda tc: tc.get("tier", 2))
             state["test_cases"] = fallback
             state["gherkin_scenarios"] = [tc.get("gherkin", "") for tc in fallback if tc.get("gherkin")]
+            if "metrics" in state and isinstance(state["metrics"], dict):
+                state["metrics"]["total_test_cases"] = len(fallback)
             return state
 
     # ------------------------------------------------------------------

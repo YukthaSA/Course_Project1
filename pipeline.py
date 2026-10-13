@@ -25,6 +25,63 @@ from engine import PlaywrightRunner
 
 logger = logging.getLogger("PipelineOrchestrator")
 
+
+def build_traceability(requirements, test_cases, test_results):
+    """Build a requirement → test case → execution status traceability table.
+
+    Returns a list of dicts:
+      [{requirement_id, requirement_desc, test_case_id, test_title, status}]
+    where status is VERIFIED / FAILED / NOT_COVERED / PARTIAL
+    """
+    # Index test results by test_case_id
+    result_by_tc = {}
+    for r in (test_results or []):
+        tc_id = r.get("test_case_id", "")
+        result_by_tc[tc_id] = r.get("status", "NOT_RUN")
+
+    # Index test cases by requirement_id
+    tc_by_req = {}
+    for tc in (test_cases or []):
+        req_id = tc.get("requirement_id", "")
+        tc_by_req.setdefault(req_id, []).append(tc)
+
+    table = []
+    for req in (requirements or []):
+        req_id = req.get("id", "")
+        req_desc = req.get("description", "")[:80]
+        linked_tcs = tc_by_req.get(req_id, [])
+
+        if not linked_tcs:
+            table.append({
+                "requirement_id": req_id,
+                "requirement_desc": req_desc,
+                "test_case_id": "—",
+                "test_title": "—",
+                "status": "NOT_COVERED"
+            })
+        else:
+            for tc in linked_tcs:
+                tc_id = tc.get("id", "")
+                tc_title = tc.get("title", "")
+                exec_status = result_by_tc.get(tc_id, "NOT_RUN")
+
+                if exec_status == "PASSED":
+                    status = "VERIFIED"
+                elif exec_status in ("FAILED", "ERROR"):
+                    status = "FAILED"
+                else:
+                    status = "PARTIAL"
+
+                table.append({
+                    "requirement_id": req_id,
+                    "requirement_desc": req_desc,
+                    "test_case_id": tc_id,
+                    "test_title": tc_title,
+                    "status": status
+                })
+
+    return table
+
 class AgenticQAPipeline:
     def __init__(self, model_client=None):
         self.req_extractor = RequirementExtractionAgent(model_client)
@@ -106,6 +163,10 @@ class AgenticQAPipeline:
             exec_res = self.runner.execute_script(current_script, script_name=f"test_run_v{attempt + 1}.py")
             state["execution_result"] = exec_res
 
+            # Store per-test-case results if available
+            if exec_res.get("test_results"):
+                state["test_results"] = exec_res["test_results"]
+
             if exec_res.get("status") == "PASSED":
                 logger.info(f"✅ EXECUTION SUCCESSFUL on Attempt #{attempt + 1}!")
                 state.setdefault("metrics", {})["passed_scripts"] = state.get("metrics", {}).get("passed_scripts", 0) + 1
@@ -140,6 +201,13 @@ class AgenticQAPipeline:
                         "screenshots": exec_res.get("screenshots", [])
                     }
                     state.setdefault("metrics", {})["human_interventions"] = 1
+
+        # Build requirement → test → execution traceability
+        state["traceability"] = build_traceability(
+            state.get("requirements", []),
+            state.get("test_cases", []),
+            state.get("test_results", [])
+        )
 
         state["final_results"] = {
             "completed_at": datetime.now().isoformat(),
