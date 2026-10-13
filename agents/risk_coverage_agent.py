@@ -28,10 +28,13 @@ class RiskCoveragePlanningAgent(BaseAgent):
 Generate a JSON object with:
 1. "high_risk_areas": list of critical functional subsystems or vulnerability areas (strings)
 2. "risk_matrix": array of objects, each containing:
+   - "requirement_id": the requirement ID this risk entry maps to (e.g. "REQ-001")
    - "area": module name or requirement focus
    - "severity": "Critical", "High", "Medium", or "Low"
    - "likelihood": "High", "Medium", or "Low"
    - "risk_score": integer (1-10)
+   - "risk_level": "Critical", "High", "Medium", or "Low" (same as severity)
+   - "tier": integer 1, 2, or 3 (1 = highest priority, 3 = lowest)
    - "mitigation": recommended automated testing strategy
 3. "testing_priorities": array of prioritized test suites with:
    - "tier": "Tier 1 (Smoke / Blocker)", "Tier 2 (Core Business Logic)", or "Tier 3 (Edge Cases & Security)"
@@ -60,28 +63,37 @@ Return ONLY valid JSON object:"""
                         high_risk_areas.append("Authentication & Security Integrity")
                     tier1_reqs.append(rid)
                     risk_matrix.append({
+                        "requirement_id": rid,
                         "area": f"{rid} - {cat} Module",
                         "severity": "Critical",
                         "likelihood": "Medium",
                         "risk_score": 9,
+                        "risk_level": "Critical",
+                        "tier": 1,
                         "mitigation": "Automated negative input testing, boundary validation, and TLS verification."
                     })
                 elif cat in ["Performance", "UI"]:
                     tier3_reqs.append(rid)
                     risk_matrix.append({
+                        "requirement_id": rid,
                         "area": f"{rid} - {cat} Experience",
                         "severity": "Medium",
                         "likelihood": "High",
                         "risk_score": 6,
+                        "risk_level": "Medium",
+                        "tier": 3,
                         "mitigation": "Playwright DOM selector assertions and async response timing thresholds."
                     })
                 else:
                     tier2_reqs.append(rid)
                     risk_matrix.append({
+                        "requirement_id": rid,
                         "area": f"{rid} - Core Workflow",
                         "severity": "High",
                         "likelihood": "Medium",
                         "risk_score": 7,
+                        "risk_level": "High",
+                        "tier": 2,
                         "mitigation": "End-to-end positive user workflow validation and state transitions."
                     })
 
@@ -125,7 +137,25 @@ Return ONLY valid JSON object:"""
                 plan_data = json.loads(_deterministic_risk_planner())
 
             state["high_risk_areas"] = plan_data.get("high_risk_areas", ["Security Integrity", "Core Business Flow"])
-            state["risk_matrix"] = plan_data.get("risk_matrix", [])
+            raw_matrix = plan_data.get("risk_matrix", [])
+            # Backfill requirement_id / tier / risk_level if the LLM omitted them
+            for entry in raw_matrix:
+                if "tier" not in entry:
+                    sev = entry.get("severity", "Medium")
+                    if sev == "Critical":
+                        entry["tier"] = 1
+                    elif sev in ("High",):
+                        entry["tier"] = 2
+                    else:
+                        entry["tier"] = 3
+                if "risk_level" not in entry:
+                    entry["risk_level"] = entry.get("severity", "Medium")
+                if "requirement_id" not in entry:
+                    # Try to extract from the area string (e.g. "REQ-001 - Security Module")
+                    area = entry.get("area", "")
+                    parts = area.split(" - ")
+                    entry["requirement_id"] = parts[0].strip() if parts else ""
+            state["risk_matrix"] = raw_matrix
             state["testing_priorities"] = plan_data.get("testing_priorities", [])
             state["test_plan"] = {
                 "total_high_risk_items": len(state["high_risk_areas"]),
