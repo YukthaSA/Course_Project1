@@ -503,11 +503,18 @@ if state:
                     ttype = tc.get('type', 'Positive')
                     with st.expander(f"[{tc_id}] {title} ({ttype} | Tier {tier_key})"):
                         st.write(f"**Mapped Requirement:** `{req_id}`  |  **Tier:** Tier {tier_key}")
+                        if tc.get("technique"):
+                            st.write(f"**Technique:** {tc.get('technique')}")
                         st.write(f"**Preconditions:** {tc.get('preconditions', 'Application in ready state')}")
+                        if tc.get("test_data"):
+                            st.write("**Test Data:**")
+                            st.json({k: (str(v)[:60] + "..." if len(str(v)) > 60 else v) for k, v in tc["test_data"].items()})
                         st.write("**Steps:**")
                         for s in tc.get("steps", []):
                             st.write(f"- {s}")
                         st.write(f"**Expected Result:** {tc.get('expected_result', 'N/A')}")
+                        for a in tc.get("assertions", []):
+                            st.caption(f"Assert: {a.get('type')} {a.get('value', '')}")
                         if tc.get("gherkin"):
                             st.code(tc.get("gherkin"), language="gherkin")
         else:
