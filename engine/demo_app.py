@@ -3,9 +3,16 @@ Standalone Local Target Web Application for Playwright Live Testing & Verificati
 Provides real HTML endpoints for Login, Product Search, Shopping Cart, and Order History.
 """
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import re
 import threading
 import time
 import sys
+from urllib.parse import parse_qs
+
+# Demo credentials accepted by the sandbox login form
+VALID_EMAIL = "qa.user@example.com"
+VALID_PASSWORD = "ValidSecurePass123!"
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -82,11 +89,24 @@ class DemoServerHandler(BaseHTTPRequestHandler):
         self.wfile.write(HTML_PAGE.encode("utf-8"))
 
     def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        form = parse_qs(self.rfile.read(length).decode("utf-8", errors="replace"), keep_blank_values=True)
+        email = (form.get("email", [""])[0]).strip()
+        password = form.get("password", [""])[0]
+
+        if not email or not password:
+            alert = "<div class='alert alert-danger'>Email and password are required.</div>"
+        elif not EMAIL_RE.match(email) or len(email) > 254:
+            alert = "<div class='alert alert-danger'>Please enter a valid email address.</div>"
+        elif email == VALID_EMAIL and password == VALID_PASSWORD:
+            alert = "<div class='alert alert-success'>✅ Authentication Successful! Welcome back.</div>"
+        else:
+            alert = "<div class='alert alert-danger'>Invalid email or password.</div>"
+
         self.send_response(200)
         self.send_header("Content-type", "text/html")
         self.end_headers()
-        response_html = HTML_PAGE + "<div class='alert alert-success'>✅ Authentication Successful! Welcome back.</div>"
-        self.wfile.write(response_html.encode("utf-8"))
+        self.wfile.write((HTML_PAGE + alert).encode("utf-8"))
 
     def log_message(self, format, *args):
         pass  # Quiet logging

@@ -27,6 +27,11 @@ class PlaywrightRunner:
 
         # Allow sufficient subprocess buffer time (startup + browser launch + execution)
         subproc_timeout = max(25.0, (self.timeout / 1000.0) + 15.0)
+        # Per-test scripts need time proportional to the number of test cases (~2s each)
+        import re as _re
+        _m = _re.search(r"Test cases:\s*(\d+)", script_code[:600])
+        if _m:
+            subproc_timeout = max(subproc_timeout, 20.0 + 2.5 * int(_m.group(1)))
         logger.info(f"▶️ Executing Playwright script at '{script_path}' (Subprocess Timeout: {subproc_timeout}s)...")
         start_time = time.time()
 
@@ -77,16 +82,21 @@ class PlaywrightRunner:
                         # Support both single result and per-test-case list
                         if isinstance(result_data, list):
                             test_results = result_data
-                            # Overall status: PASSED only if all individual tests passed
+                            # SKIPPED cases (not automatable / nothing to assert) are neutral:
+                            # overall PASSED only if every executed test passed and at least one ran.
+                            executed = [r for r in test_results if r.get("status") != "SKIPPED"]
                             if not test_results:
                                 status = "FAILED_NO_TESTS"
                                 error_message = "Script ran but produced zero test results"
-                            elif all(r.get("status") == "PASSED" for r in test_results):
+                            elif not executed:
+                                status = "FAILED_NO_TESTS"
+                                error_message = "Every test case was skipped - no tests verified"
+                            elif all(r.get("status") == "PASSED" for r in executed):
                                 status = "PASSED"
                             else:
                                 status = "FAILED"
-                                failed = [r for r in test_results if r.get("status") != "PASSED"]
-                                error_message = f"{len(failed)}/{len(test_results)} test cases failed"
+                                failed = [r for r in executed if r.get("status") != "PASSED"]
+                                error_message = f"{len(failed)}/{len(executed)} test cases failed"
                         else:
                             status = result_data.get("status", "FAILED")
                             error_message = result_data.get("error", None)

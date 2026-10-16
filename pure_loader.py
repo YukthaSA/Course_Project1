@@ -120,7 +120,7 @@ PURE_METADATA_MAP = {
 
 class PUREDatasetLoader:
     def __init__(self, base_dir: Optional[str] = None):
-        self.base_dir = base_dir or r"C:\Users\HP\Course_Project1"
+        self.base_dir = base_dir or os.path.dirname(os.path.abspath(__file__))
         self.data_dir = os.path.join(self.base_dir, "data", "pure")
         self.xml_dir = os.path.join(self.data_dir, "xml")
         self.samples_pure_dir = os.path.join(self.base_dir, "samples", "pure")

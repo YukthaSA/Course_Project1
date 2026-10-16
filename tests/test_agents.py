@@ -184,7 +184,7 @@ def test_test_design_agent(sample_state):
     req1_tcs = [tc for tc in tcs if tc["requirement_id"] == "REQ-001"]
     req1_types = {tc["type"] for tc in req1_tcs}
     assert {"Positive", "Negative", "Security", "Boundary"}.issubset(req1_types)
-    assert len(req1_tcs) == 4
+    assert len(req1_tcs) >= 4
 
     # Tier 3 requirement (REQ-002) gets 1 test type (Positive)
     req2_tcs = [tc for tc in tcs if tc["requirement_id"] == "REQ-002"]

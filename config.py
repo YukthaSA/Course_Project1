@@ -83,7 +83,14 @@ class Config:
         if os.path.exists(self.PURE_CATALOG_PATH):
             try:
                 with open(self.PURE_CATALOG_PATH, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    catalog = json.load(f)
+                # Catalog may hold another machine's absolute paths: re-point to local samples dir
+                for doc in catalog:
+                    fname = doc.get("filename") or os.path.basename(str(doc.get("path", "")).replace("\\", "/"))
+                    local = os.path.join(self.PURE_SAMPLES_DIR, fname)
+                    if fname and os.path.exists(local):
+                        doc["path"] = local
+                return catalog
             except Exception:
                 pass
         try:

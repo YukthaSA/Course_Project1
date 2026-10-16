@@ -163,9 +163,8 @@ class AgenticQAPipeline:
             exec_res = self.runner.execute_script(current_script, script_name=f"test_run_v{attempt + 1}.py")
             state["execution_result"] = exec_res
 
-            # Store per-test-case results if available
-            if exec_res.get("test_results"):
-                state["test_results"] = exec_res["test_results"]
+            # Store per-test-case results (empty list if the run crashed, so stale results never linger)
+            state["test_results"] = exec_res.get("test_results") or []
 
             if exec_res.get("status") == "PASSED":
                 logger.info(f"✅ EXECUTION SUCCESSFUL on Attempt #{attempt + 1}!")
@@ -186,21 +185,34 @@ class AgenticQAPipeline:
                     "duration": exec_res.get("duration_seconds")
                 })
 
+                # Always analyze: even on the last attempt it tells the reviewer what failed and why
+                logger.info("⚡ Triggering Failure Analysis Agent...")
+                state = await self.failure_analyzer.invoke(state)
+                analysis = state.get("error_analysis") or {}
+                state["retry_history"][-1]["root_cause"] = analysis.get("root_cause")
+
+                if analysis.get("can_auto_recover", True) and attempt < max_retries - 1:
+                    logger.info("🔧 Failures look script/locator related - retrying with an adjusted script.")
+                    continue
+
                 if attempt < max_retries - 1:
-                    logger.info("⚡ Triggering Failure Analysis Agent for automated script repair...")
-                    state = await self.failure_analyzer.invoke(state)
+                    logger.info("🛑 Retrying cannot fix these failures - escalating without further attempts.")
                 else:
                     logger.error("❌ Max retries reached. Escalating persistent failure to Human Review.")
-                    state["human_review_required"] = True
-                    state["human_review_context"] = {
-                        "last_error": exec_res.get("error"),
-                        "total_attempts": max_retries,
-                        "script": current_script,
-                        "stdout": exec_res.get("stdout"),
-                        "stderr": exec_res.get("stderr"),
-                        "screenshots": exec_res.get("screenshots", [])
-                    }
-                    state.setdefault("metrics", {})["human_interventions"] = 1
+                state["human_review_required"] = True
+                state["human_review_context"] = {
+                    "reason": analysis.get("escalation_reason", "persistent_failure"),
+                    "last_error": exec_res.get("error"),
+                    "total_attempts": attempt + 1,
+                    "summary": analysis.get("summary", {}),
+                    "failures": analysis.get("failures", []),
+                    "script": current_script,
+                    "stdout": exec_res.get("stdout"),
+                    "stderr": exec_res.get("stderr"),
+                    "screenshots": exec_res.get("screenshots", [])
+                }
+                state.setdefault("metrics", {})["human_interventions"] = 1
+                break
 
         # Build requirement → test → execution traceability
         state["traceability"] = build_traceability(

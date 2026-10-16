@@ -19,6 +19,9 @@ if hasattr(sys.stdout, "reconfigure"):
 from config import config
 from pipeline import AgenticQAPipeline
 from engine.demo_app import start_demo_server
+from evaluation import (design_metrics, template_baseline, llm_baseline, execution_metrics,
+                        comparison_markdown)
+from collections import Counter
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Academic Report Generator on PURE Benchmark")
@@ -63,87 +66,71 @@ async def generate_academic_report():
     state = await pipeline.run(srs_text=srs_text, target_url=target_url, max_retries=2, metadata=selected_doc)
     duration = time.time() - start_t
 
-    # 4. Extract Metrics
-    reqs = state.get("requirements", [])
-    val_reqs = state.get("validated_requirements", [])
-    tcs = state.get("test_cases", [])
+    # 4. Extract measured metrics (nothing estimated)
+    reqs = state.get("validated_requirements") or state.get("requirements", [])
     approved_tcs = state.get("approved_test_cases", [])
-    exec_res = state.get("execution_result", {})
-    metrics = state.get("metrics", {})
     retries = state.get("retry_history", [])
-    q_metrics = state.get("quality_metrics", {})
-    sec_audit = state.get("security_audit", {})
+    exec_res = state.get("execution_result", {})
+    framework = design_metrics(reqs, approved_tcs)
+    execm = execution_metrics(state)
 
-    total_reqs = len(reqs)
-    total_tcs = len(tcs)
-    pass_status = exec_res.get("status", "FAILED")
-    
-    manual_prompt_time_mins = total_reqs * 12.5
-    agentic_time_mins = duration / 60.0
-    time_saved_mins = manual_prompt_time_mins - agentic_time_mins
-    efficiency_gain = (time_saved_mins / manual_prompt_time_mins) * 100 if manual_prompt_time_mins > 0 else 90
+    baselines = {"Template baseline": design_metrics(reqs, template_baseline(reqs))}
+    notes = ["Template baseline = one generic positive test (plus one generic negative for Security/Functional "
+             "requirements) per requirement, with no test data or assertions."]
+    llm = await llm_baseline(pipeline.test_designer, reqs)
+    if llm:
+        cases, subset = llm
+        baselines[f"Single-prompt LLM (first {len(subset)} reqs)"] = design_metrics(subset, cases)
+        notes.append(f"Single-prompt LLM baseline only covers the first {len(subset)} requirements, so its "
+                     "coverage is measured against that subset.")
+    else:
+        notes.append("Single-prompt LLM baseline skipped (no valid API key or unparseable response).")
 
-    report_md = f"""# Capstone Evaluation & Benchmark Report
-**Project Title:** AGENTIC AI–BASED FRAMEWORK FOR AUTOMATED REQUIREMENT-TO-TEST GENERATION AND VALIDATION IN SOFTWARE QUALITY ENGINEERING  
-**Dataset:** PURE (Public Requirements) Dataset - IEEE RE'17 Benchmark  
-**Evaluated Document:** {selected_doc.get('title')} ({selected_doc.get('domain')})  
-**Generated At:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  
-**Target URL:** {target_url}
+    by_tech = Counter(tc.get("technique") or "unspecified" for tc in approved_tcs)
+    by_tier = Counter(f"Tier {tc.get('tier', '?')}" for tc in approved_tcs)
+    analysis = state.get("error_analysis") or {}
 
----
+    report_md = f"""# Evaluation Report
+**Dataset:** PURE - {selected_doc.get('title')} ({selected_doc.get('domain')})  
+**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  
+**Target:** {target_url} (built-in demo app)  
+**Pipeline wall-clock time:** {duration:.1f} s
 
-## 1. Executive Summary & Key Findings
-This evaluation quantifies the performance of the proposed multi-agent LLM framework against traditional manual per-requirement engineering workflows using real-world Software Requirements Specifications from the PURE dataset.
+All figures below are measured from this run. No manual-effort or time-saving estimates are made.
 
-- **Requirements Processed:** {total_reqs}
-- **Requirements Validated:** {len(val_reqs)} ({sum(1 for r in val_reqs if r.get('is_valid'))} Valid)
-- **Specification Testability Index:** {q_metrics.get('testability_score', 90)}% ({q_metrics.get('clarity_rating', 'High')})
-- **Test Cases Designed:** {total_tcs} ({len(approved_tcs)} Approved)
-- **Security Compliance Score:** {sec_audit.get('compliance_score', 92)}%
-- **Total Execution Time:** {duration:.2f} seconds ({agentic_time_mins:.2f} mins)
-- **Estimated Manual Engineering Effort:** {manual_prompt_time_mins:.1f} minutes
-- **Efficiency Gain:** **{efficiency_gain:.1f}% Faster**
-- **Final Test Execution Status:** `{pass_status}`
+## 1. Test design quality vs baselines
+{comparison_markdown(framework, baselines)}
 
----
+""" + "\n".join(f"- {n}" for n in notes) + f"""
 
-## 2. Quantitative Evaluation Table
+Cases by technique: {dict(by_tech)}  
+Cases by tier: {dict(by_tier)}  
+Cases by type: {framework['by_type']}
 
-| Metric | Manual Engineering Baseline | Proposed Agentic Framework | Improvement / Delta |
+## 2. Execution results (Playwright, per test case)
+| Executed | Passed | Failed | Skipped |
 |---|---|---|---|
-| **Human Handoffs Required** | {total_reqs * 3} manual review cycles | 0 (100% automated workflow) | **100% Reduction** |
-| **Requirements Processed** | {total_reqs} | {total_reqs} | 100% Extraction |
-| **Testability Audit** | Ad-hoc manual review | Automated Smell & Ambiguity Audit | Systematic ({q_metrics.get('testability_score', 90)}%) |
-| **Risk Prioritization** | Qualitative estimation | 2D Risk Matrix (Impact × Likelihood) | Multi-tier Prioritization |
-| **Test Cases Generated** | Inconsistent formats | {total_tcs} BDD / Gherkin test cases | Standardized |
-| **Security Audit** | Manual checklist | OWASP Top 10 Automated Audit | Automated ({sec_audit.get('compliance_score', 92)}%) |
-| **Playwright Execution Time** | ~15 mins manual setup | {exec_res.get('duration_seconds', 0.0)} seconds | Automated Sandbox Run |
-| **Total Turnaround Time** | ~{manual_prompt_time_mins:.1f} mins | **{agentic_time_mins:.2f} mins** | **{efficiency_gain:.1f}% Faster** |
+| {execm['executed']} | {execm['passed']} | {execm['failed']} | {execm['skipped']} |
 
----
+Final run status: `{exec_res.get('status', 'UNKNOWN')}`
 
-## 3. Detailed Requirement & Test Coverage Breakdown
+## 3. Failure analysis
+- Application defects: {execm['defects']} (by severity: {execm['defects_by_severity'] or 'none'})
+- Script issues: {execm['script_issues']}
+- Environment issues: {execm['environment_issues']}
+- Root cause: {analysis.get('root_cause', 'n/a')}
+- Automatic retries: {len(retries)}
+- Escalated to human review: `{state.get('human_review_required', False)}` ({analysis.get('escalation_reason', 'n/a')})
 
-### Extracted Requirements Sample ({min(8, total_reqs)} of {total_reqs})
+## 4. Limitations
+- Tests run against a built-in demo app, not the requirement document's real system.
+- Baselines are stand-ins, not an independent expert-written suite; defect-detection comparison would need seeded faults.
+- Keyword-based requirement detection may miss requirement types outside auth, email, password, numeric, text, upload, session.
+
+## 5. Sample approved test cases
 """
-    for req in reqs[:8]:
-        report_md += f"- **[{req.get('id')}]** ({req.get('category')} / {req.get('priority')}): {req.get('description')}\n"
-
-    report_md += f"\n### Generated Test Cases Sample ({min(6, len(approved_tcs))} of {len(approved_tcs)})\n"
     for tc in approved_tcs[:6]:
-        report_md += f"- **[{tc.get('id')}]** ({tc.get('type')}): {tc.get('title')}\n"
-
-    report_md += f"""\n---
-
-## 4. Execution & Failure Recovery Analysis
-- **Execution Engine:** Playwright Async Subprocess Engine
-- **Captured Screenshots:** {len(exec_res.get('screenshots', []))} files saved in `logs/`
-- **Error Tracebacks Handled:** {len(retries)} automated retries executed
-- **Human-in-the-Loop Escalation Triggered:** `{state.get('human_review_required', False)}`
-
----
-*Report generated automatically by `generate_report.py` - Agentic QA Testing Framework (PURE Dataset)*
-"""
+        report_md += f"- **[{tc.get('id')}]** ({tc.get('type')}, {tc.get('technique', '-')}): {tc.get('title')}\n"
 
     report_path = os.path.join(config.DATA_DIR, "Evaluation_Report.md")
     with open(report_path, "w", encoding="utf-8") as f:

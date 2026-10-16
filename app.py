@@ -579,6 +579,24 @@ if state:
         if exec_res.get("stderr"):
             with st.expander("Error Logs (stderr)", expanded=False):
                 st.text(exec_res.get("stderr"))
+                
+        # Failure analysis: application defects vs script/environment problems
+        analysis = state.get("error_analysis") or {}
+        if analysis.get("failures"):
+            st.divider()
+            st.subheader("🔬 Failure Analysis")
+            st.write(f"**{analysis.get('root_cause')}** — {analysis.get('analysis_details')}")
+            st.info(f"Recommended action: {analysis.get('corrective_action')}")
+            st.dataframe([{
+                "Test": f.get("test_case_id"),
+                "Requirement": f.get("requirement_id"),
+                "Tier": f.get("tier"),
+                "Severity": f.get("severity"),
+                "Category": f.get("category"),
+                "Title": f.get("title"),
+                "Assessment": f.get("likelihood"),
+                "Suggested Fix": f.get("suggestion"),
+            } for f in analysis["failures"]], use_container_width=True)
 
     with tab8:
         st.subheader("🔗 Requirement ↔ Test Case Traceability Matrix")
