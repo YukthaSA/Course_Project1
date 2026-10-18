@@ -1,0 +1,293 @@
+[
+  {
+    "id": "0000_cctns",
+    "filename": "0000_cctns_srs.txt",
+    "xml_filename": "0000 - cctns.xml",
+    "title": "Crime and Criminal Tracking Network and Systems (CCTNS)",
+    "domain": "Law Enforcement & Public Safety",
+    "description": "Comprehensive requirements for police criminal investigation records, complaint management, biometric search, and citizen services portal.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\0000_cctns_srs.txt",
+    "relative_path": "samples\\pure\\0000_cctns_srs.txt",
+    "requirements_count": 114,
+    "categories": [
+      "Functional",
+      "Performance",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "0000_gamma_j",
+    "filename": "0000_gamma_j_srs.txt",
+    "xml_filename": "0000 - gamma j.xml",
+    "title": "Gamma Ray Burst Detector (GROND / Gamma-J)",
+    "domain": "Scientific Instrumentation & Astronomy",
+    "description": "Automated trigger capture, multi-channel optical sensor calibration, and rapid burst event data transmission.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\0000_gamma_j_srs.txt",
+    "relative_path": "samples\\pure\\0000_gamma_j_srs.txt",
+    "requirements_count": 51,
+    "categories": [
+      "Functional",
+      "Performance",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "1995_gemini",
+    "filename": "1995_gemini_srs.txt",
+    "xml_filename": "1995 - gemini.xml",
+    "title": "Gemini 8m Telescopes Control System",
+    "domain": "Aerospace & Astronomical Observatory",
+    "description": "Real-time telescope mount positioning, instrumentation control, sensor telemetry, and safety interlocks for twin 8m optical telescopes.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\1995_gemini_srs.txt",
+    "relative_path": "samples\\pure\\1995_gemini_srs.txt",
+    "requirements_count": 583,
+    "categories": [
+      "Functional",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "1998_themas",
+    "filename": "1998_themas_srs.txt",
+    "xml_filename": "1998 - themas.xml",
+    "title": "THEMAS Radiation Therapy Monitoring System",
+    "domain": "Healthcare & Medical Devices",
+    "description": "Safety-critical radiation therapy verification, oncology patient positioning, beam dosage calculation, and emergency halt protocols.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\1998_themas_srs.txt",
+    "relative_path": "samples\\pure\\1998_themas_srs.txt",
+    "requirements_count": 163,
+    "categories": [
+      "Functional",
+      "UI"
+    ]
+  },
+  {
+    "id": "1999_dii",
+    "filename": "1999_dii_srs.txt",
+    "xml_filename": "1999 - dii.xml",
+    "title": "Defense Information Infrastructure (DII COE)",
+    "domain": "Defense & Secure Infrastructure",
+    "description": "Mission-critical defense computing environment, role-based access control, cryptographic verification, and audit logging.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\1999_dii_srs.txt",
+    "relative_path": "samples\\pure\\1999_dii_srs.txt",
+    "requirements_count": 144,
+    "categories": [
+      "Functional",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "1999_tcs",
+    "filename": "1999_tcs_srs.txt",
+    "xml_filename": "1999 - tcs.xml",
+    "title": "Intelligent Traffic Control System (TCS)",
+    "domain": "Intelligent Transportation Systems",
+    "description": "Adaptive urban traffic light optimization, intersection queue sensor feedback, and emergency vehicle green-wave preemption.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\1999_tcs_srs.txt",
+    "relative_path": "samples\\pure\\1999_tcs_srs.txt",
+    "requirements_count": 364,
+    "categories": [
+      "Functional",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "2003_qheadache",
+    "filename": "2003_qheadache_srs.txt",
+    "xml_filename": "2003 - qheadache.xml",
+    "title": "Quality Headache Medical Diagnostic Assistant",
+    "domain": "Healthcare & Clinical Decision Support",
+    "description": "Symptom questionnaire workflow, ICD-10 diagnostic differential reasoning, and clinical contraindication checks.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\2003_qheadache_srs.txt",
+    "relative_path": "samples\\pure\\2003_qheadache_srs.txt",
+    "requirements_count": 100,
+    "categories": [
+      "Functional",
+      "UI"
+    ]
+  },
+  {
+    "id": "2005_microcare",
+    "filename": "2005_microcare_srs.txt",
+    "xml_filename": "2005 - microcare.xml",
+    "title": "Microcare Patient Tele-Monitoring Platform",
+    "domain": "Healthcare & Telemedicine",
+    "description": "Remote patient vital signs telemetry, medication reminder scheduling, and caregiver escalation paging.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\2005_microcare_srs.txt",
+    "relative_path": "samples\\pure\\2005_microcare_srs.txt",
+    "requirements_count": 184,
+    "categories": [
+      "Functional",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "2005_phin",
+    "filename": "2005_phin_srs.txt",
+    "xml_filename": "2005 - phin.xml",
+    "title": "Public Health Information Network (CDC PHIN)",
+    "domain": "Public Health & Epidemiology",
+    "description": "National disease surveillance notification, laboratory result messaging, vaccine registry exchange, and outbreak alerting.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\2005_phin_srs.txt",
+    "relative_path": "samples\\pure\\2005_phin_srs.txt",
+    "requirements_count": 159,
+    "categories": [
+      "Functional",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "2006_eirene_sys_15",
+    "filename": "2006_eirene_sys_15_srs.txt",
+    "xml_filename": "2006 - eirene sys 15.xml",
+    "title": "EIRENE Railway Telecommunications System",
+    "domain": "Railway Transportation & Telecommunications",
+    "description": "GSM-R railway wireless radio network, emergency voice priority calling, and wayside-to-train data communication.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\2006_eirene_sys_15_srs.txt",
+    "relative_path": "samples\\pure\\2006_eirene_sys_15_srs.txt",
+    "requirements_count": 564,
+    "categories": [
+      "Functional",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "2007_get_real_0_2",
+    "filename": "2007_get_real_0_2_srs.txt",
+    "xml_filename": "2007 - get real 0.2.xml",
+    "title": "Get Real Low-Latency Audio Processing Engine",
+    "domain": "Multimedia & Audio Signal Processing",
+    "description": "Real-time digital signal processing, spatial audio filtering, buffer overrun prevention, and hardware driver abstraction.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\2007_get_real_0_2_srs.txt",
+    "relative_path": "samples\\pure\\2007_get_real_0_2_srs.txt",
+    "requirements_count": 52,
+    "categories": [
+      "Functional",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "2007_eirene_fun_7_2",
+    "filename": "2007_eirene_fun_7_2_srs.txt",
+    "xml_filename": "2007-eirene_fun_7-2.xml",
+    "title": "EIRENE Railway Telecommunications System",
+    "domain": "Railway Transportation & Telecommunications",
+    "description": "GSM-R railway wireless radio network, emergency voice priority calling, and wayside-to-train data communication.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\2007_eirene_fun_7_2_srs.txt",
+    "relative_path": "samples\\pure\\2007_eirene_fun_7_2_srs.txt",
+    "requirements_count": 583,
+    "categories": [
+      "Functional",
+      "Performance",
+      "Safety",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "2007_ertms",
+    "filename": "2007_ertms_srs.txt",
+    "xml_filename": "2007-ertms.xml",
+    "title": "European Rail Traffic Management System (ERTMS)",
+    "domain": "Railway Transportation & Safety-Critical",
+    "description": "Standardized interoperable train control, automated speed supervision, emergency braking, and cab signaling.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\2007_ertms_srs.txt",
+    "relative_path": "samples\\pure\\2007_ertms_srs.txt",
+    "requirements_count": 198,
+    "categories": [
+      "Functional",
+      "Performance",
+      "Safety",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "2008_keepass",
+    "filename": "2008_keepass_srs.txt",
+    "xml_filename": "2008 - keepass.xml",
+    "title": "KeePass Password Safe Specification",
+    "domain": "Security, Authentication & Cryptography",
+    "description": "Secure master key authentication, AES-256 encryption, password generation, clipboard protection, and encrypted database management.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\2008_keepass_srs.txt",
+    "relative_path": "samples\\pure\\2008_keepass_srs.txt",
+    "requirements_count": 32,
+    "categories": [
+      "Functional",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "2009_video_search",
+    "filename": "2009_video_search_srs.txt",
+    "xml_filename": "2009 - video search.xml",
+    "title": "Content-Based Video Retrieval & Search Engine",
+    "domain": "Multimedia & AI Information Retrieval",
+    "description": "Video keyframe indexing, semantic tag search, subtitle full-text query, and video streaming playback.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\2009_video_search_srs.txt",
+    "relative_path": "samples\\pure\\2009_video_search_srs.txt",
+    "requirements_count": 72,
+    "categories": [
+      "Functional",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "2010_blitdraft",
+    "filename": "2010_blitdraft_srs.txt",
+    "xml_filename": "2010-blitdraft.xml",
+    "title": "BlitDraft Enterprise Document System",
+    "domain": "Enterprise Document Management",
+    "description": "Multi-user revision versioning, vector rendering, electronic signatures, and access control.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\2010_blitdraft_srs.txt",
+    "relative_path": "samples\\pure\\2010_blitdraft_srs.txt",
+    "requirements_count": 84,
+    "categories": [
+      "Functional",
+      "Security",
+      "UI"
+    ]
+  },
+  {
+    "id": "new_2008_peering",
+    "filename": "new_2008_peering_srs.txt",
+    "xml_filename": "NEW - 2008 - peering.xml",
+    "title": "BGP Internet Route Peering Coordinator",
+    "domain": "Internet Infrastructure & Networking",
+    "description": "Border Gateway Protocol session negotiation, autonomous system route validation, and prefix filtering.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\new_2008_peering_srs.txt",
+    "relative_path": "samples\\pure\\new_2008_peering_srs.txt",
+    "requirements_count": 20,
+    "categories": [
+      "Functional",
+      "UI"
+    ]
+  },
+  {
+    "id": "new_2009_peppol_approved",
+    "filename": "new_2009_peppol_approved_srs.txt",
+    "xml_filename": "NEW - 2009 - peppol approved.xml",
+    "title": "PEPPOL Pan-European Public Procurement On-Line",
+    "domain": "E-Commerce & Digital Procurement",
+    "description": "Cross-border electronic ordering, invoice validation, secure transmission gateway, and multi-currency billing reconciliation.",
+    "path": "C:\\Users\\HP\\Course_Project1\\samples\\pure\\new_2009_peppol_approved_srs.txt",
+    "relative_path": "samples\\pure\\new_2009_peppol_approved_srs.txt",
+    "requirements_count": 540,
+    "categories": [
+      "Functional",
+      "Security",
+      "UI"
+    ]
+  }
+]

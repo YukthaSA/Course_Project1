@@ -1,0 +1,109 @@
+===========================================================================
+SYSTEM REQUIREMENTS SPECIFICATION (SRS)
+PROJECT: KEEPASS PASSWORD SAFE SPECIFICATION
+DOMAIN:  Security, Authentication & Cryptography
+SOURCE:  PURE Benchmark Dataset (IEEE RE 2017 / ISTI-CNR)
+===========================================================================
+
+1. SYSTEM OVERVIEW & SCOPE
+   Secure master key authentication, AES-256 encryption, password generation, clipboard protection, and encrypted database management.
+
+2. TESTABLE SOFTWARE REQUIREMENTS (32 Specifications)
+---------------------------------------------------------------------------
+
+[REQ-001] [Functional] Priority: High
+Requirement: REQ-1: KeePass must be downloaded and installed
+
+[REQ-002] [Security] Priority: High
+Requirement: REQ-2: Master Password has no limits in length. A whole sentence can be used with more than 100 characters.
+
+[REQ-003] [Functional] Priority: High
+Requirement: Folder selected must be of type the database can read and that is “name”.kdb
+
+[REQ-004] [UI] Priority: High
+Requirement: Databases must have different names or else the previews one will be replace if selected
+
+[REQ-005] [Functional] Priority: High
+Requirement: There must be entries in the database in order for them to be printed
+
+[REQ-006] [Security] Priority: High
+Requirement: All data related to the word must be shown. For example if user types “abc” and abc is part of a password and of a username, both entries must be shown
+
+[REQ-007] [UI] Priority: Medium
+Requirement: A name is required in order for the new group/subgroup to be created
+
+[REQ-008] [Functional] Priority: Medium
+Requirement: A subgroup cannot be created when no group is selected
+
+[REQ-009] [UI] Priority: Medium
+Requirement: A name is required in order for the group/subgroup to be renamed
+
+[REQ-010] [Functional] Priority: High
+Requirement: In order to find something in a group a word must be placed in the find field
+
+[REQ-011] [Functional] Priority: High
+Requirement: An entry must belong to a group to be created
+
+[REQ-012] [Security] Priority: High
+Requirement: When the password field is completed the repeat password field must be completed
+
+[REQ-013] [Security] Priority: High
+Requirement: REQ-13: Password field and repeat password field must be identical
+
+[REQ-014] [UI] Priority: High
+Requirement: ìAn entry must be selected to be viewed or modified
+
+[REQ-015] [Security] Priority: High
+Requirement: ìWhen the password field is changed the repeat password field must be Changed and be identical with password field
+
+[REQ-016] [Functional] Priority: High
+Requirement: An entry must be selected before it is duplicated
+
+[REQ-017] [UI] Priority: Medium
+Requirement: REQ-18: An internet connection and a browser are required in order to download new language translations For the following features, use cases are not included
+
+[REQ-018] [UI] Priority: Medium
+Requirement: The prefix “Auto-Type:” is required in front of each sequence
+
+[REQ-019] [Functional] Priority: High
+Requirement: Sequence’s length must not be more than a line (59 characters)
+
+[REQ-020] [Functional] Priority: Medium
+Requirement: If two auto-types are referred in one note field, only the first is used
+
+[REQ-021] [Functional] Priority: Medium
+Requirement: Only one database file is allowed in command line options
+
+[REQ-022] [Functional] Priority: High
+Requirement: In case a space is found in the path, it must be enclosed into quotes
+
+[REQ-023] [Security] Priority: High
+Requirement: If a master password is required to unlock the database, the database doesn’t open unless the password is entered
+
+[REQ-024] [UI] Priority: Medium
+Requirement: If a key file is required to unlock the database, the database doesn’t open unless the key file is present
+
+[REQ-025] [Security] Priority: High
+Requirement: If there is a composite key, both master password and key file are required
+
+[REQ-026] [Security] Priority: High
+Requirement: In case of lost master password or key file, the database never unlocks again. There is no recovery
+
+[REQ-027] [Functional] Priority: Medium
+Requirement: There is no backdoor or key that unlocks all databases
+
+[REQ-028] [Security] Priority: High
+Requirement: REQ-29: File formats are not specialized password database formats
+
+[REQ-029] [Functional] Priority: Medium
+Requirement: REQ-30: File formats only specify a low-level layout of stored data
+
+[REQ-030] [Functional] Priority: Medium
+Requirement: Global hot key cannot be changed
+
+[REQ-031] [Functional] Priority: Medium
+Requirement: Title, username or URL cannot be changed in a TAN entry.
+
+[REQ-032] [Functional] Priority: Medium
+Requirement: When a TAN is used, it expires automatically and can never be used again.
+

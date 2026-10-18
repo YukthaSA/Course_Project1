@@ -1,19 +1,22 @@
 """
 Streamlit Web Dashboard for Agentic AI Automated Requirement-to-Test Framework
+Enhanced with PURE Benchmark Dataset Explorer & Multi-Stage Quality Engineering Analytics
 """
 import streamlit as st
 import asyncio
 import os
 import json
+import re
 import time
 from datetime import datetime
+import plotly.express as px
 
 from config import config
 from state import AgentState
-from pipeline import AgenticQAPipeline
+from pipeline import AgenticQAPipeline, build_traceability
 
 st.set_page_config(
-    page_title="Agentic QA - Requirement to Test Framework",
+    page_title="Agentic QA - PURE Benchmark Framework",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -31,270 +34,637 @@ st.markdown("""
     .sub-title {
         font-size: 1.0rem;
         color: #555;
-        margin-bottom: 20px;
+        margin-bottom: 15px;
     }
     .metric-card {
         background-color: #f8f9fa;
-        border-radius: 10px;
-        padding: 15px;
-        border-left: 5px solid #1E88E5;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
-    .stCodeBlock {
         border-radius: 8px;
+        padding: 12px 16px;
+        border-left: 4px solid #1E88E5;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        margin-bottom: 10px;
+    }
+    .badge-pure {
+        background-color: #e3f2fd;
+        color: #0d47a1;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        display: inline-block;
     }
 </style>
 """, unsafe_allow_html=True)
 
+# Fetch PURE catalog
+pure_catalog = config.get_pure_catalog()
+
 # Session state initialization
 if "state" not in st.session_state:
-    st.session_state.state = None
+    # Try loading existing run results from disk if available
+    saved_results_path = os.path.join(config.DATA_DIR, "pipeline_results.json")
+    if os.path.exists(saved_results_path):
+        try:
+            with open(saved_results_path, "r", encoding="utf-8") as f:
+                st.session_state.state = json.load(f)
+        except Exception:
+            st.session_state.state = None
+    else:
+        st.session_state.state = None
+
 if "srs_text" not in st.session_state:
-    # Load default sample SRS
-    sample_path = os.path.join(config.SAMPLES_DIR, "sample_srs.txt")
-    if os.path.exists(sample_path):
-        with open(sample_path, "r", encoding="utf-8") as f:
+    default_srs = config.get_default_srs_path()
+    if os.path.exists(default_srs):
+        with open(default_srs, "r", encoding="utf-8") as f:
             st.session_state.srs_text = f.read()
     else:
         st.session_state.srs_text = "The system shall allow users to log in with email and password."
 
-# Sidebar Configuration
+if "selected_doc_id" not in st.session_state:
+    st.session_state.selected_doc_id = "2008_keepass" if any(d["id"] == "2008_keepass" for d in pure_catalog) else (pure_catalog[0]["id"] if pure_catalog else "")
+
+# ==============================================================================
+# SIDEBAR: PURE DATASET EXPLORER & CONFIGURATION
+# ==============================================================================
 with st.sidebar:
-    st.image("https://img.icons8.com/color/96/robot.png", width=64)
+    st.image("https://img.icons8.com/color/96/robot.png", width=56)
     st.title("Framework Settings")
-    
-    st.subheader("API Keys Status")
-    google_status = "🟢 Active" if config.has_valid_google_key else "🟡 Demo / Fallback Mode"
-    groq_status = "🟢 Active" if config.has_valid_groq_key else "🟡 Demo / Fallback Mode"
+
+    st.subheader("📚 PURE Dataset Explorer")
+    st.caption("Public Requirements Benchmark (IEEE RE '17)")
+
+    # Domain filter
+    domains = ["All Domains"] + sorted(list(set(d.get("domain", "General") for d in pure_catalog)))
+    selected_domain = st.selectbox("Filter by Domain", domains)
+
+    # Filter catalog documents
+    if selected_domain == "All Domains":
+        filtered_docs = pure_catalog
+    else:
+        filtered_docs = [d for d in pure_catalog if d.get("domain") == selected_domain]
+
+    doc_options = {d["id"]: f"{d['title'][:32]}... ({d['requirements_count']} reqs)" for d in filtered_docs}
+
+    current_selection_idx = 0
+    doc_keys = list(doc_options.keys())
+    if st.session_state.selected_doc_id in doc_keys:
+        current_selection_idx = doc_keys.index(st.session_state.selected_doc_id)
+
+    selected_doc_key = st.selectbox(
+        "Select SRS Document",
+        options=doc_keys,
+        format_func=lambda k: doc_options[k],
+        index=current_selection_idx if doc_keys else 0
+    )
+
+    selected_doc_meta = next((d for d in pure_catalog if d["id"] == selected_doc_key), None)
+
+    if selected_doc_meta:
+        st.markdown(f"""
+        <div class="metric-card">
+            <b>{selected_doc_meta['title']}</b><br>
+            <span class="badge-pure">{selected_doc_meta['domain']}</span><br>
+            <small style="color: #666;">{selected_doc_meta['description'][:110]}...</small><br>
+            <b>Requirements:</b> {selected_doc_meta['requirements_count']}
+        </div>
+        """, unsafe_allow_html=True)
+
+        if st.button("📥 Load Document into Pipeline", use_container_width=True, type="secondary"):
+            doc_content = config.load_pure_document(selected_doc_key)
+            if doc_content:
+                st.session_state.srs_text = doc_content
+                st.session_state.selected_doc_id = selected_doc_key
+                st.success(f"Loaded '{selected_doc_meta['title']}'!")
+                st.rerun()
+
+    st.divider()
+
+    st.subheader("API Status")
+    google_status = "🟢 Active" if config.has_valid_google_key else "🟡 Deterministic Mode"
+    groq_status = "🟢 Active" if config.has_valid_groq_key else "🟡 Deterministic Mode"
     st.write(f"**Google Gemini:** {google_status}")
     st.write(f"**Groq API:** {groq_status}")
-    
+
     st.divider()
     st.subheader("Target Settings")
-    target_url = st.text_input("Target Test URL", value=config.TARGET_URL)
-    headless_mode = st.checkbox("Run Headless Browser", value=config.HEADLESS)
-    max_retries = st.slider("Max Automatic Retries", min_value=1, max_value=5, value=config.MAX_RETRIES)
-    
-    st.divider()
-    if st.button("📁 Load Sample SRS Document", use_container_width=True):
-        sample_path = os.path.join(config.SAMPLES_DIR, "sample_srs.txt")
-        if os.path.exists(sample_path):
-            with open(sample_path, "r", encoding="utf-8") as f:
-                st.session_state.srs_text = f.read()
-            st.rerun()
+    target_url = st.text_input("Target URL", value=config.TARGET_URL)
+    headless_mode = st.checkbox("Headless Browser", value=config.HEADLESS)
+    max_retries = st.slider("Max Retries", min_value=1, max_value=4, value=config.MAX_RETRIES)
 
-# Main Header
+# ==============================================================================
+# MAIN PAGE HEADER & SRS INPUT
+# ==============================================================================
 st.markdown('<p class="main-title">🤖 Agentic AI Quality Engineering Framework</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-title">Automated Requirement Extraction ➔ Validation ➔ Risk Planning ➔ Test Design ➔ Security Review ➔ Playwright Execution ➔ Failure Recovery</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-title">Automated Requirement Extraction ➔ Validation ➔ Risk Planning ➔ Test Design ➔ Security Review ➔ Playwright Execution</p>', unsafe_allow_html=True)
 
-# Top Action Control Bar
 col_srs, col_run = st.columns([4, 1])
 with col_srs:
-    st.session_state.srs_text = st.text_area("Plain-English SRS Document / User Stories", value=st.session_state.srs_text, height=140)
+    st.session_state.srs_text = st.text_area(
+        "SRS Specification Document",
+        value=st.session_state.srs_text,
+        height=140,
+        help="Paste custom specification text or select any of the 18 PURE dataset documents from the sidebar."
+    )
 
 with col_run:
     st.write("")
     st.write("")
     run_btn = st.button("🚀 Run Agent Pipeline", type="primary", use_container_width=True)
 
-# Execution logic
-if run_btn and st.session_state.srs_text.strip():
+# ==============================================================================
+# PIPELINE EXECUTION HANDLER
+# ==============================================================================
+if run_btn:
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    def update_ui(message, step, state):
-        status_text.markdown(f"**[{step}/7] {message}**")
+    def update_callback(msg, step, state):
         progress_bar.progress(int((step / 7) * 100))
+        status_text.info(f"**{msg}**")
 
-    pipeline = AgenticQAPipeline()
-    
-    with st.spinner("Processing multi-agent testing pipeline..."):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        final_state = loop.run_until_complete(
-            pipeline.run(
-                srs_text=st.session_state.srs_text,
-                target_url=target_url,
-                max_retries=max_retries,
-                status_callback=update_ui
+    meta = selected_doc_meta if selected_doc_meta else {"title": "Custom Specification", "domain": "User Input"}
+
+    with st.spinner("Executing Multi-Agent Quality Engineering Pipeline..."):
+        pipeline = AgenticQAPipeline()
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            final_state = loop.run_until_complete(
+                pipeline.run(
+                    srs_text=st.session_state.srs_text,
+                    target_url=target_url,
+                    max_retries=max_retries,
+                    status_callback=update_callback,
+                    metadata=meta
+                )
             )
-        )
-        st.session_state.state = final_state
-        progress_bar.progress(100)
-        status_text.success("✅ Multi-Agent Pipeline Execution Complete!")
+            st.session_state.state = final_state
+            progress_bar.progress(100)
+            status_text.success("✅ Agentic QA Pipeline Execution Completed Successfully!")
+            time.sleep(1)
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error executing pipeline: {e}")
 
-# Render Results Dashboard if available
+# ==============================================================================
+# METRICS OVERVIEW CARDS
+# ==============================================================================
 state = st.session_state.state
 
 if state:
-    # Summary Metrics Row
-    m1, m2, m3, m4, m5 = st.columns(5)
     reqs = state.get("requirements", [])
     val_reqs = state.get("validated_requirements", [])
     tcs = state.get("test_cases", [])
+    app_tcs = state.get("approved_test_cases", [])
     exec_res = state.get("execution_result", {})
-    status_flag = exec_res.get("status", "NOT_RUN")
-    hitl = state.get("human_review_required", False)
+    q_metrics = state.get("quality_metrics", {})
+    sec_audit = state.get("security_audit", {})
+    status_code = state.get("final_results", {}).get("status", "UNKNOWN")
 
-    m1.metric("Requirements", len(reqs))
-    m2.metric("Validated", sum(1 for r in val_reqs if r.get("is_valid")))
-    m3.metric("Test Cases", len(tcs))
-    m4.metric("Execution", status_flag, delta="Passed" if status_flag == "PASSED" else "-Failed", delta_color="normal" if status_flag == "PASSED" else "inverse")
-    m5.metric("Human Review", "Required 🛑" if hitl else "None ✅")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        st.metric("Requirements", len(reqs), f"{sum(1 for r in val_reqs if r.get('is_valid'))} Valid")
+    with c2:
+        testability = q_metrics.get("testability_score", 90)
+        st.metric("Testability Index", f"{testability}%", q_metrics.get("clarity_rating", "High"))
+    with c3:
+        st.metric("Test Cases", len(tcs), f"{len(app_tcs)} Approved")
+    with c4:
+        sec_score = sec_audit.get("compliance_score", 92)
+        st.metric("Security Score", f"{sec_score}%", "OWASP Audited")
+    with c5:
+        exec_status = exec_res.get("status", "NOT_RUN")
+        status_color = "🟢" if exec_status == "PASSED" else "🔴"
+        st.metric("Sandbox Run", f"{status_color} {exec_status}", f"Retry #{state.get('retry_count', 0)}")
 
     st.divider()
 
-    # Feature Tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📝 Requirements & Validation",
-        "🎯 Risk & Coverage Matrix",
-        "🧪 Test Design & Security",
-        "⚡ Playwright Execution",
-        "🛑 Human-in-the-Loop Review",
-        "📊 Analytics & Benchmarks"
+    # ==============================================================================
+    # MULTI-TAB DETAILED ANALYTICS
+    # ==============================================================================
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+        "📋 Requirements Matrix",
+        "🔍 Quality & Testability",
+        "⚠️ Risk Assessment",
+        "🧪 Test Cases & BDD",
+        "🛡️ Security Audit",
+        "💻 Playwright Script",
+        "⚡ Execution & Sandbox",
+        "🔗 Traceability"
     ])
 
-    # Tab 1: Requirements & Validation
     with tab1:
-        st.subheader("Extracted Requirements & Validation Audits")
-        if val_reqs:
-            st.dataframe(
-                [
-                    {
-                        "ID": r.get("id"),
-                        "Category": r.get("category", "Functional"),
-                        "Priority": r.get("priority"),
-                        "Risk Level": r.get("risk_level"),
-                        "Description": r.get("description"),
-                        "Valid": "✅ Yes" if r.get("is_valid") else "⚠️ Issues",
-                        "Confidence": f"{int(r.get('confidence', 0.9)*100)}%",
-                        "Issues": ", ".join(r.get("validation_issues", [])) or "None"
-                    }
-                    for r in val_reqs
-                ],
-                use_container_width=True
-            )
-        else:
-            st.info("No requirements extracted yet. Click 'Run Agent Pipeline' to start.")
+        st.subheader("📋 Extracted System Requirements")
+        if reqs:
+            # Build a risk lookup from the risk matrix (assigned by Risk Agent, not extraction)
+            risk_lookup = {}
+            for rm in state.get("risk_matrix", []):
+                rid = rm.get("requirement_id") or rm.get("id", "")
+                risk_lookup[rid] = rm.get("risk_level", "—")
 
-    # Tab 2: Risk & Coverage Matrix
+            table_data = []
+            for r in reqs:
+                table_data.append({
+                    "ID": r.get("id"),
+                    "Category": r.get("category", "Functional"),
+                    "Priority": r.get("priority", "Medium"),
+                    "Risk Level": risk_lookup.get(r.get("id"), "—"),
+                    "Testable": "✅" if r.get("testable", True) else "❌",
+                    "Description": r.get("description", "")
+                })
+            st.dataframe(table_data, use_container_width=True)
+        else:
+            st.info("No requirements extracted yet.")
+
     with tab2:
-        st.subheader("Risk-Based Test Coverage Strategy")
-        high_risk = state.get("high_risk_areas", [])
-        priorities = state.get("testing_priorities", [])
-        
-        st.write(f"**High-Risk Modules Identified:** {', '.join(high_risk) if high_risk else 'None'}")
-        if priorities:
-            st.table([
-                {
-                    "Rank": p.get("priority_rank"),
-                    "Req ID": p.get("requirement_id"),
-                    "Coverage Scope": ", ".join(p.get("coverage_types", [])),
-                    "Risk Rationale": p.get("rationale")
-                }
-                for p in priorities
-            ])
+        st.subheader("🔍 Quality, Ambiguity & Testability Audit")
+        col_q1, col_q2 = st.columns([1, 2])
+        with col_q1:
+            st.metric("Overall Testability Index", f"{q_metrics.get('testability_score', 85)}%")
+            st.write(f"**Clarity Rating:** {q_metrics.get('clarity_rating', 'High')}")
+            st.write(f"**Valid Requirements:** {q_metrics.get('valid_count', len(reqs))}/{len(reqs)}")
 
-    # Tab 3: Test Design & Security Audit
+            # Coverage gap summary
+            coverage_gaps = q_metrics.get("coverage_gaps", [])
+            conflicts = q_metrics.get("conflicts", [])
+            dup_pairs = q_metrics.get("duplicate_pairs", {})
+            rewrites = q_metrics.get("suggested_rewrites", [])
+
+            if coverage_gaps:
+                st.write(f"**Coverage Gaps:** {len(coverage_gaps)}")
+            if conflicts:
+                st.write(f"**Conflicts Found:** {len(conflicts)}")
+            if dup_pairs:
+                st.write(f"**Duplicate Pairs:** {len(dup_pairs)}")
+            if rewrites:
+                st.write(f"**Suggested Rewrites:** {len(rewrites)}")
+
+        with col_q2:
+            st.write("**Ambiguity & Smell Findings:**")
+            amb_terms = q_metrics.get("ambiguous_terms_found", [])
+            if amb_terms:
+                for term in amb_terms:
+                    st.warning(f"⚠️ {term}")
+            else:
+                st.success("✅ No severe ambiguity or vague qualifiers detected in specifications.")
+
+        # Horizontal bar chart of each requirement's testability_score
+        if val_reqs:
+            st.divider()
+            st.write("**📊 Requirement Testability Score Distribution:**")
+            req_ids = [r.get("id", f"REQ-{i+1}") for i, r in enumerate(val_reqs)]
+            scores = [r.get("testability_score", 80) for r in val_reqs]
+            colors = [
+                "green" if s >= 80 else ("yellow" if s >= 60 else "red")
+                for s in scores
+            ]
+            fig_qual = px.bar(
+                x=scores,
+                y=req_ids,
+                orientation="h",
+                labels={"x": "Testability Score (%)", "y": "Requirement ID"},
+                title="Requirement Testability Scores"
+            )
+            fig_qual.update_traces(marker_color=colors)
+            fig_qual.update_layout(height=max(320, len(val_reqs) * 22), yaxis={"autorange": "reversed"})
+            st.plotly_chart(fig_qual, use_container_width=True)
+
+        # Coverage Gaps Section
+        if coverage_gaps:
+            st.divider()
+            st.write("**🕳️ Missing Requirement Categories (Coverage Gaps):**")
+            for gap in coverage_gaps:
+                st.error(f"🔻 {gap}")
+
+        # Conflicts Section
+        if conflicts:
+            st.divider()
+            st.write("**⚔️ Conflicting Requirements (Contradictions):**")
+            for c in conflicts:
+                st.warning(f"⚠️ **{c.get('req_a')}** ↔ **{c.get('req_b')}**: {c.get('reason', 'Potential contradiction')}")
+
+        # Duplicates Section
+        if dup_pairs:
+            st.divider()
+            st.write("**📋 Near-Duplicate Requirements:**")
+            for req_id, similar_ids in dup_pairs.items():
+                st.info(f"🔄 **{req_id}** is similar to: {', '.join(similar_ids)}")
+
+        # Suggested Rewrites Section
+        if rewrites:
+            st.divider()
+            st.write("**✏️ Suggested Rewrites for Ambiguous Requirements:**")
+            for rw in rewrites:
+                req_label = rw.get('id', '?')
+                with st.expander(f"Rewrite for {req_label}"):
+                    if rw.get("original"):
+                        st.caption(f"**Original:** {rw.get('original')}")
+                    st.code(rw.get("rewrite", ""), language=None)
+
     with tab3:
-        st.subheader("Structured Test Cases & Security Review")
-        approved_tcs = state.get("approved_test_cases", tcs)
-        rev_results = state.get("review_results", {})
-        
-        if rev_results:
-            st.success(f"**Security & Quality Audit Score:** {rev_results.get('quality_score', 90.0)}%")
-            findings = rev_results.get("security_findings", [])
-            if findings:
-                with st.expander("🛡️ Security Recommendations & OWASP Audits"):
-                    for f in findings:
-                        st.write(f"• {f}")
+        st.subheader("⚠️ 2D Risk Assessment & Coverage Matrix")
+        risk_matrix = state.get("risk_matrix", [])
+        if risk_matrix:
+            # Bar chart showing count of risk_matrix entries per severity level colored red/orange/yellow/green
+            sev_levels = ["Critical", "High", "Medium", "Low"]
+            sev_counts = {s: 0 for s in sev_levels}
+            for entry in risk_matrix:
+                s = str(entry.get("severity", "Medium")).strip().capitalize()
+                if s in sev_counts:
+                    sev_counts[s] += 1
+                else:
+                    sev_counts[s] = 1
 
-        for tc in approved_tcs:
-            with st.expander(f"📌 [{tc.get('tc_id')}] {tc.get('title')} ({tc.get('category')})"):
-                st.write(f"**Requirement ID:** {tc.get('requirement_id')}")
-                st.write(f"**Preconditions:** {', '.join(tc.get('preconditions', []))}")
-                st.write("**Steps:**")
-                for step in tc.get("steps", []):
-                    st.write(f"  1. {step}")
-                st.write("**Expected Results:**")
-                for exp in tc.get("expected_results", []):
-                    st.write(f"  • {exp}")
+            fig_risk = px.bar(
+                x=list(sev_counts.keys()),
+                y=list(sev_counts.values()),
+                color=list(sev_counts.keys()),
+                color_discrete_map={
+                    "Critical": "red",
+                    "High": "orange",
+                    "Medium": "yellow",
+                    "Low": "green"
+                },
+                labels={"x": "Severity Level", "y": "Count"},
+                title="Risk Matrix Entries by Severity Level"
+            )
+            fig_risk.update_layout(showlegend=False, height=320)
+            st.plotly_chart(fig_risk, use_container_width=True)
 
-    # Tab 4: Playwright Execution
+            # Build structured table with columns: Tier, Req ID, Area, Severity, Likelihood, Risk Score, Mitigation
+            rm_table = []
+            for idx, entry in enumerate(risk_matrix):
+                rid = entry.get("requirement_id")
+                if not rid or rid == "—":
+                    area = entry.get("area", "")
+                    m = re.search(r"REQ[-_]?\d+", area, re.IGNORECASE)
+                    if m:
+                        rid = m.group(0).upper()
+                    else:
+                        rid = area.split(" - ")[0].strip() if " - " in area else (
+                            reqs[idx].get("id") if idx < len(reqs) else f"REQ-{idx+1:03d}"
+                        )
+
+                raw_tier = entry.get("tier")
+                if raw_tier is None or raw_tier == "—":
+                    sev = str(entry.get("severity", "Medium")).lower()
+                    tier = 1 if sev == "critical" else (2 if sev == "high" else 3)
+                else:
+                    try:
+                        tier = int(raw_tier)
+                    except (ValueError, TypeError):
+                        tier = 2
+
+                rm_table.append({
+                    "Tier": tier,
+                    "Req ID": rid,
+                    "Area": entry.get("area", ""),
+                    "Severity": entry.get("severity", ""),
+                    "Likelihood": entry.get("likelihood", ""),
+                    "Risk Score": entry.get("risk_score", ""),
+                    "Mitigation": entry.get("mitigation", ""),
+                })
+
+            # Sort by tier numerically
+            rm_table.sort(key=lambda x: x.get("Tier", 9) if isinstance(x.get("Tier"), int) else 9)
+            st.dataframe(rm_table, use_container_width=True)
+        else:
+            st.info("No risk matrix available. Run the pipeline to generate risk assessment.")
+
+        st.divider()
+        st.subheader("🎯 Prioritized Test Suites")
+        priorities = state.get("testing_priorities", [])
+        tier_colors = {
+            "Tier 1": "🔴", "Tier 2": "🟡", "Tier 3": "🟢",
+        }
+        if priorities:
+            for p in priorities:
+                tier_str = p.get("tier", "")
+                icon = next((v for k, v in tier_colors.items() if k in tier_str), "⚪")
+                st.markdown(f"{icon} **{tier_str}**: {p.get('focus')}")
+                st.caption(f"Target Requirements: {', '.join(p.get('target_requirements', []))}")
+        else:
+            st.info("No testing priorities defined.")
+
     with tab4:
-        st.subheader("Generated Automation Script & Sandbox Results")
-        current_script = state.get("current_script", "")
-        if current_script:
-            st.code(current_script, language="python")
+        st.subheader("🧪 Generated Test Cases & BDD (Gherkin) Scenarios")
 
-        if exec_res:
-            st.subheader("Execution Report")
-            c_status, c_time, c_code = st.columns(3)
-            c_status.write(f"**Status:** {exec_res.get('status')}")
-            c_time.write(f"**Duration:** {exec_res.get('duration_seconds')} seconds")
-            c_code.write(f"**Exit Code:** {exec_res.get('exit_code')}")
+        if tcs:
+            # Pie chart at the top showing test case count per tier colored red/gold/green
+            tier_pie_counts = {"Tier 1": 0, "Tier 2": 0, "Tier 3": 0}
+            for tc in tcs:
+                raw_t = tc.get("tier", 2)
+                try:
+                    t_val = int(raw_t)
+                except (ValueError, TypeError):
+                    t_val = 2
+                lbl = f"Tier {t_val}"
+                tier_pie_counts[lbl] = tier_pie_counts.get(lbl, 0) + 1
 
-            with st.expander("📄 Console Stdout Logs", expanded=True):
-                st.text(exec_res.get("stdout", "No stdout output"))
+            fig_tier = px.pie(
+                names=list(tier_pie_counts.keys()),
+                values=list(tier_pie_counts.values()),
+                color=list(tier_pie_counts.keys()),
+                color_discrete_map={
+                    "Tier 1": "red",
+                    "Tier 2": "gold",
+                    "Tier 3": "green"
+                },
+                title="Test Case Breakdown by Tier"
+            )
+            fig_tier.update_layout(height=320)
+            st.plotly_chart(fig_tier, use_container_width=True)
 
-            if exec_res.get("stderr"):
-                with st.expander("❌ Console Stderr Logs"):
-                    st.text(exec_res.get("stderr"))
+            # Group test cases by tier
+            tcs_by_tier = {}
+            for tc in tcs:
+                t = tc.get("tier", 2)
+                try:
+                    t = int(t)
+                except (ValueError, TypeError):
+                    t = 2
+                tcs_by_tier.setdefault(t, []).append(tc)
 
-            shots = exec_res.get("screenshots", [])
-            if shots:
-                st.subheader("Execution Screenshots")
-                for shot in shots:
-                    if os.path.exists(shot):
-                        st.image(shot, caption=os.path.basename(shot), width=600)
+            tier_header_map = {
+                1: "🔴 Tier 1 — Smoke / Blocker",
+                2: "🟡 Tier 2 — Core Business Logic",
+                3: "🟢 Tier 3 — Edge Cases & UI"
+            }
 
-    # Tab 5: Human-in-the-Loop Review
+            for tier_key in sorted(tcs_by_tier.keys()):
+                header_prefix = tier_header_map.get(tier_key, f"⚪ Tier {tier_key}")
+                count = len(tcs_by_tier[tier_key])
+                st.markdown(f"### {header_prefix} ({count} tests)")
+
+                for tc in tcs_by_tier[tier_key]:
+                    tc_id = tc.get('id', 'TC')
+                    req_id = tc.get('requirement_id', 'REQ')
+                    title = tc.get('title', 'Scenario')
+                    ttype = tc.get('type', 'Positive')
+                    with st.expander(f"[{tc_id}] {title} ({ttype} | Tier {tier_key})"):
+                        st.write(f"**Mapped Requirement:** `{req_id}`  |  **Tier:** Tier {tier_key}")
+                        if tc.get("technique"):
+                            st.write(f"**Technique:** {tc.get('technique')}")
+                        st.write(f"**Preconditions:** {tc.get('preconditions', 'Application in ready state')}")
+                        if tc.get("test_data"):
+                            st.write("**Test Data:**")
+                            st.json({k: (str(v)[:60] + "..." if len(str(v)) > 60 else v) for k, v in tc["test_data"].items()})
+                        st.write("**Steps:**")
+                        for s in tc.get("steps", []):
+                            st.write(f"- {s}")
+                        st.write(f"**Expected Result:** {tc.get('expected_result', 'N/A')}")
+                        for a in tc.get("assertions", []):
+                            st.caption(f"Assert: {a.get('type')} {a.get('value', '')}")
+                        if tc.get("gherkin"):
+                            st.code(tc.get("gherkin"), language="gherkin")
+        else:
+            st.info("No test cases generated yet.")
+
     with tab5:
-        st.subheader("Human Review Checkpoint")
-        if hitl:
-            st.warning("⚠️ **Persistent Failure Escalation Triggered** - Automated retry cycles exhausted.")
-            hitl_ctx = state.get("human_review_context", {})
-            err_an = state.get("error_analysis", {})
-            
-            st.error(f"**Last Failure Error:** {hitl_ctx.get('last_error')}")
-            st.write(f"**Root Cause Diagnosis:** {err_an.get('root_cause', 'Unknown')}")
-            st.write(f"**Suggested Corrective Action:** {err_an.get('corrective_action', 'N/A')}")
-            
-            col_a1, col_a2, col_a3 = st.columns(3)
-            if col_a1.button("✅ Approve Fix & Re-run", use_container_width=True):
-                st.success("Human approval granted. Overriding failure flag.")
-                state["human_review_required"] = False
-                st.rerun()
-            if col_a2.button("🔁 Request Re-generation with Feedback", use_container_width=True):
-                st.info("Re-prompting script generator with human instructions.")
-            if col_a3.button("🐞 Log as System Bug", use_container_width=True):
-                st.warning("Issue logged to issue tracker.")
-        else:
-            st.success("✅ No persistent failures! All generated tests completed automatically without requiring human intervention.")
+        st.subheader("🛡️ OWASP Security Review & Hardening")
+        st.write(f"**Security Compliance Score:** {sec_audit.get('compliance_score', 90)}%")
+        st.write("**Findings:**")
+        for f in sec_audit.get("owasp_findings", []):
+            st.info(f"🛡️ {f}")
+        st.write("**Hardening Recommendations:**")
+        for r in sec_audit.get("recommendations", []):
+            st.write(f"- {r}")
 
-    # Tab 6: Analytics & Benchmarks
     with tab6:
-        st.subheader("Framework Efficiency & Comparison Metrics")
-        col_b1, col_b2, col_b3 = st.columns(3)
-        
-        metrics = state.get("metrics", {})
-        total_reqs = metrics.get("total_requirements", len(reqs)) or 1
-        
-        # Benchmark estimation comparing manual prompting vs agentic pipeline
-        manual_time_mins = total_reqs * 15  # ~15 min per req manually
-        agent_time_mins = 0.5  # ~30s total pipeline run
-        time_saved = max(0.0, manual_time_mins - agent_time_mins)
-        
-        col_b1.metric("Estimated Manual Effort", f"{manual_time_mins:.1f} mins")
-        col_b2.metric("Agentic Pipeline Execution", f"{agent_time_mins:.1f} mins")
-        col_b3.metric("Time Savings Ratio", f"{int((time_saved / max(1, manual_time_mins))*100)}%", delta=f"+{time_saved:.1f} mins saved")
+        st.subheader("💻 Executable Playwright Test Script")
+        current_script = state.get("current_script", "# No script generated yet")
+        st.code(current_script, language="python")
+        st.download_button("💾 Download Script (test_suite.py)", current_script, file_name="test_suite.py", mime="text/x-python")
 
-        st.subheader("Retry Recovery History")
-        retry_hist = state.get("retry_history", [])
-        if retry_hist:
-            st.write(retry_hist)
+    with tab7:
+        st.subheader("⚡ Sandboxed Playwright Live Execution")
+        st.write(f"**Final Status:** {exec_res.get('status', 'N/A')}")
+        st.write(f"**Duration:** {exec_res.get('duration_seconds', 0)} seconds")
+
+        # Donut chart showing passed vs failed test count if execution results exist
+        exec_counts = {}
+        if state.get("test_results"):
+            t_res = state.get("test_results", [])
+            p_count = sum(1 for r in t_res if r.get("status") == "PASSED")
+            f_count = sum(1 for r in t_res if r.get("status") != "PASSED")
+            if p_count > 0 or f_count > 0:
+                exec_counts = {"Passed": p_count, "Failed": f_count}
+        elif exec_res and exec_res.get("status") != "NOT_RUN":
+            st_code = exec_res.get("status")
+            if st_code == "PASSED":
+                exec_counts = {"Passed": len(app_tcs) or 1, "Failed": 0}
+            elif st_code in ("FAILED", "ERROR"):
+                exec_counts = {"Passed": 0, "Failed": 1}
+
+        if exec_counts:
+            fig_donut = px.pie(
+                names=list(exec_counts.keys()),
+                values=list(exec_counts.values()),
+                color=list(exec_counts.keys()),
+                color_discrete_map={"Passed": "green", "Failed": "red"},
+                hole=0.4,
+                title="Execution Results (Pass vs Fail)"
+            )
+            fig_donut.update_layout(height=320)
+            st.plotly_chart(fig_donut, use_container_width=True)
+
+        # Display execution screenshot if generated
+        screenshot_path = os.path.join(config.LOGS_DIR, "execution_result.png")
+        if os.path.exists(screenshot_path):
+            st.image(screenshot_path, caption="📸 Playwright Execution Screenshot Proof", use_column_width=True)
+
+        if exec_res.get("stdout"):
+            with st.expander("Console Output (stdout)", expanded=True):
+                st.text(exec_res.get("stdout"))
+        if exec_res.get("stderr"):
+            with st.expander("Error Logs (stderr)", expanded=False):
+                st.text(exec_res.get("stderr"))
+                
+        # Failure analysis: application defects vs script/environment problems
+        analysis = state.get("error_analysis") or {}
+        if analysis.get("failures"):
+            st.divider()
+            st.subheader("🔬 Failure Analysis")
+            st.write(f"**{analysis.get('root_cause')}** — {analysis.get('analysis_details')}")
+            st.info(f"Recommended action: {analysis.get('corrective_action')}")
+            st.dataframe([{
+                "Test": f.get("test_case_id"),
+                "Requirement": f.get("requirement_id"),
+                "Tier": f.get("tier"),
+                "Severity": f.get("severity"),
+                "Category": f.get("category"),
+                "Title": f.get("title"),
+                "Assessment": f.get("likelihood"),
+                "Suggested Fix": f.get("suggestion"),
+            } for f in analysis["failures"]], use_container_width=True)
+
+    with tab8:
+        st.subheader("🔗 Requirement ↔ Test Case Traceability Matrix")
+        traceability = state.get("traceability", [])
+        test_results = state.get("test_results", [])
+
+        # If traceability was not previously generated in cached state, compute on the fly
+        if not traceability and (reqs or tcs):
+            traceability = build_traceability(reqs, tcs, test_results)
+
+        if traceability:
+            # Summary metrics
+            total_reqs = len(set(t["requirement_id"] for t in traceability))
+            verified = len(set(t["requirement_id"] for t in traceability if t["status"] == "VERIFIED"))
+            failed = len(set(t["requirement_id"] for t in traceability if t["status"] == "FAILED"))
+            not_covered = len(set(t["requirement_id"] for t in traceability if t["status"] == "NOT_COVERED"))
+
+            tc1, tc2, tc3, tc4 = st.columns(4)
+            with tc1:
+                st.metric("Total Requirements", total_reqs)
+            with tc2:
+                st.metric("Verified", verified)
+            with tc3:
+                st.metric("Failed", failed)
+            with tc4:
+                st.metric("Not Covered", not_covered)
+
+            if total_reqs > 0:
+                coverage_pct = round((verified / total_reqs) * 100, 1)
+                st.progress(min(1.0, coverage_pct / 100.0), text=f"Requirement Coverage: {coverage_pct}%")
+
+            st.divider()
+
+            # Color-coded status display
+            display_data = []
+            for t in traceability:
+                status = t.get("status", "NOT_COVERED")
+                if status == "VERIFIED":
+                    badge = "🟢 VERIFIED"
+                elif status == "FAILED":
+                    badge = "🔴 FAILED"
+                elif status == "NOT_COVERED":
+                    badge = "⚪ NOT COVERED"
+                else:
+                    badge = "🟡 PARTIAL"
+                display_data.append({
+                    "Requirement": t.get("requirement_id", "—"),
+                    "Description": t.get("requirement_desc", ""),
+                    "Test Case": t.get("test_case_id", "—"),
+                    "Test Title": t.get("test_title", "—"),
+                    "Status": badge
+                })
+            st.dataframe(display_data, use_container_width=True)
+        elif test_results:
+            st.subheader("Per-Test-Case Execution Results")
+            result_data = []
+            for r in test_results:
+                status_icon = "🟢" if r.get("status") == "PASSED" else "🔴"
+                result_data.append({
+                    "Test Case": r.get("test_case_id", "?"),
+                    "Requirement": r.get("requirement_id", "?"),
+                    "Status": f"{status_icon} {r.get('status', 'UNKNOWN')}",
+                    "Duration": f"{r.get('duration', 0)}s",
+                    "Error": r.get("error") or "—"
+                })
+            st.dataframe(result_data, use_container_width=True)
         else:
-            st.info("First-pass execution succeeded on Attempt #1 without needing retries!")
+            st.info("Run the pipeline to generate traceability data linking requirements to test execution results.")
 
 else:
-    st.info("👈 Enter your SRS document in the text box above and click **'🚀 Run Agent Pipeline'** to begin automated requirement-to-test generation and execution.")
+    st.info("👈 Select a PURE dataset document from the sidebar and click **'🚀 Run Agent Pipeline'** to execute the multi-agent QA workflow.")

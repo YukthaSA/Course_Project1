@@ -1,0 +1,25 @@
+===================================================================
+SYSTEM REQUIREMENT SPECIFICATION (SRS) - SECURE AUTHENTICATION PORTAL
+TARGET URL: https://practicetestautomation.com/practice-test-login/
+===================================================================
+
+1. USER AUTHENTICATION & ACCESS CONTROL
+   REQ-001: Valid User Credential Authentication
+   The system shall authenticate users with username "student" and password "Password123".
+   Upon valid authentication, the user shall be redirected to the secure area (/logged-in-successfully/).
+
+   REQ-002: Success Confirmation Display
+   Upon successful login, the system shall render a success heading ("Logged In Successfully")
+   and positive confirmation text ("Congratulations student. You successfully logged in!").
+
+   REQ-003: Session Termination (Logout)
+   The authenticated page shall provide a "Log out" button (#loop-container a.wp-block-button__link)
+   allowing the user to terminate the session and return to the login interface.
+
+2. SECURITY & INPUT VALIDATION
+   REQ-004: Invalid Username Handling
+   If an invalid username is submitted, the system shall prevent access and display
+   an error message ("Your username is invalid!").
+
+   REQ-005: Invalid Password Handling
+   If an incorrect password is submitted, the system shall display "Your password is invalid!".

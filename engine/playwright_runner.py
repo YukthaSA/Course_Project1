@@ -1,5 +1,6 @@
 """
 Playwright Runner Engine - Sandboxed execution engine for generated Playwright automation scripts
+Enhanced with adaptive subprocess timeouts and resilient error capture
 """
 import os
 import sys
@@ -13,8 +14,8 @@ from config import config
 logger = logging.getLogger("Engine.PlaywrightRunner")
 
 class PlaywrightRunner:
-    def __init__(self, timeout: int = 30000):
-        self.timeout = timeout
+    def __init__(self, timeout: int = 15000):
+        self.timeout = max(10000, timeout)
         self.logs_dir = config.LOGS_DIR
         os.makedirs(self.logs_dir, exist_ok=True)
 
@@ -24,7 +25,14 @@ class PlaywrightRunner:
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script_code)
 
-        logger.info(f"▶️ Executing Playwright script at '{script_path}' (Timeout: {self.timeout / 1000}s)...")
+        # Allow sufficient subprocess buffer time (startup + browser launch + execution)
+        subproc_timeout = max(25.0, (self.timeout / 1000.0) + 15.0)
+        # Per-test scripts need time proportional to the number of test cases (~2s each)
+        import re as _re
+        _m = _re.search(r"Test cases:\s*(\d+)", script_code[:600])
+        if _m:
+            subproc_timeout = max(subproc_timeout, 20.0 + 2.5 * int(_m.group(1)))
+        logger.info(f"▶️ Executing Playwright script at '{script_path}' (Subprocess Timeout: {subproc_timeout}s)...")
         start_time = time.time()
 
         try:
@@ -33,11 +41,13 @@ class PlaywrightRunner:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 cwd=config.BASE_DIR
             )
 
             try:
-                stdout, stderr = process.communicate(timeout=self.timeout / 1000)
+                stdout, stderr = process.communicate(timeout=subproc_timeout)
             except subprocess.TimeoutExpired:
                 process.kill()
                 stdout, stderr = process.communicate()
@@ -48,8 +58,8 @@ class PlaywrightRunner:
                     "exit_code": -1,
                     "stdout": stdout or "",
                     "stderr": stderr or "Execution timed out",
-                    "error": f"Script execution timed out after {self.timeout / 1000} seconds",
-                    "duration_seconds": duration,
+                    "error": f"Script execution timed out after {subproc_timeout:.1f} seconds",
+                    "duration_seconds": round(duration, 2),
                     "screenshots": self._gather_screenshots()
                 }
 
@@ -57,18 +67,49 @@ class PlaywrightRunner:
             exit_code = process.returncode
 
             # Parse JSON_RESULT from stdout if emitted by script
-            status = "PASSED" if exit_code == 0 else "FAILED"
+            json_result_found = False
+            status = "FAILED"  # Default to FAILED — must be explicitly PASSED
             error_message = None
-            
+            test_results = []  # Per-test-case results list
+
             for line in stdout.splitlines():
                 if "JSON_RESULT:" in line:
                     try:
                         json_str = line.split("JSON_RESULT:")[1].strip()
                         result_data = json.loads(json_str)
-                        status = result_data.get("status", status)
-                        error_message = result_data.get("error", None)
+                        json_result_found = True
+
+                        # Support both single result and per-test-case list
+                        if isinstance(result_data, list):
+                            test_results = result_data
+                            # SKIPPED cases (not automatable / nothing to assert) are neutral:
+                            # overall PASSED only if every executed test passed and at least one ran.
+                            executed = [r for r in test_results if r.get("status") != "SKIPPED"]
+                            if not test_results:
+                                status = "FAILED_NO_TESTS"
+                                error_message = "Script ran but produced zero test results"
+                            elif not executed:
+                                status = "FAILED_NO_TESTS"
+                                error_message = "Every test case was skipped - no tests verified"
+                            elif all(r.get("status") == "PASSED" for r in executed):
+                                status = "PASSED"
+                            else:
+                                status = "FAILED"
+                                failed = [r for r in executed if r.get("status") != "PASSED"]
+                                error_message = f"{len(failed)}/{len(executed)} test cases failed"
+                        else:
+                            status = result_data.get("status", "FAILED")
+                            error_message = result_data.get("error", None)
                     except Exception:
                         pass
+
+            # Guard: if exit_code==0 but no JSON_RESULT was emitted, treat as inconclusive
+            if not json_result_found:
+                if exit_code == 0:
+                    status = "FAILED_NO_TESTS"
+                    error_message = "Script exited cleanly but did not emit JSON_RESULT — no tests verified"
+                else:
+                    error_message = stderr.strip() or f"Process exited with non-zero code {exit_code}"
 
             if exit_code != 0 and not error_message:
                 error_message = stderr.strip() or f"Process exited with non-zero code {exit_code}"
@@ -87,7 +128,8 @@ class PlaywrightRunner:
                 "stderr": stderr,
                 "error": error_message,
                 "duration_seconds": round(duration, 2),
-                "screenshots": screenshots
+                "screenshots": screenshots,
+                "test_results": test_results
             }
 
         except Exception as e:

@@ -1,10 +1,12 @@
 """
 Agentic QA Pipeline Orchestration - Connects specialized agents, execution engine, retry loops, and human-in-the-loop escalation
+Enhanced with PURE benchmark dataset support and detailed quality analytics
 """
 import os
 import json
 import asyncio
 import logging
+import time
 from typing import Dict, Any, Optional
 from datetime import datetime
 
@@ -23,6 +25,63 @@ from engine import PlaywrightRunner
 
 logger = logging.getLogger("PipelineOrchestrator")
 
+
+def build_traceability(requirements, test_cases, test_results):
+    """Build a requirement → test case → execution status traceability table.
+
+    Returns a list of dicts:
+      [{requirement_id, requirement_desc, test_case_id, test_title, status}]
+    where status is VERIFIED / FAILED / NOT_COVERED / PARTIAL
+    """
+    # Index test results by test_case_id
+    result_by_tc = {}
+    for r in (test_results or []):
+        tc_id = r.get("test_case_id", "")
+        result_by_tc[tc_id] = r.get("status", "NOT_RUN")
+
+    # Index test cases by requirement_id
+    tc_by_req = {}
+    for tc in (test_cases or []):
+        req_id = tc.get("requirement_id", "")
+        tc_by_req.setdefault(req_id, []).append(tc)
+
+    table = []
+    for req in (requirements or []):
+        req_id = req.get("id", "")
+        req_desc = req.get("description", "")[:80]
+        linked_tcs = tc_by_req.get(req_id, [])
+
+        if not linked_tcs:
+            table.append({
+                "requirement_id": req_id,
+                "requirement_desc": req_desc,
+                "test_case_id": "—",
+                "test_title": "—",
+                "status": "NOT_COVERED"
+            })
+        else:
+            for tc in linked_tcs:
+                tc_id = tc.get("id", "")
+                tc_title = tc.get("title", "")
+                exec_status = result_by_tc.get(tc_id, "NOT_RUN")
+
+                if exec_status == "PASSED":
+                    status = "VERIFIED"
+                elif exec_status in ("FAILED", "ERROR"):
+                    status = "FAILED"
+                else:
+                    status = "PARTIAL"
+
+                table.append({
+                    "requirement_id": req_id,
+                    "requirement_desc": req_desc,
+                    "test_case_id": tc_id,
+                    "test_title": tc_title,
+                    "status": status
+                })
+
+    return table
+
 class AgenticQAPipeline:
     def __init__(self, model_client=None):
         self.req_extractor = RequirementExtractionAgent(model_client)
@@ -39,14 +98,18 @@ class AgenticQAPipeline:
         srs_text: str,
         target_url: str = "",
         max_retries: int = config.MAX_RETRIES,
-        status_callback=None
+        status_callback=None,
+        metadata: Optional[Dict[str, Any]] = None
     ) -> AgentState:
         """Run the complete Agentic QA Pipeline from SRS to Playwright Execution & Retry Loop"""
         logger.info("============================================================")
         logger.info("🚀 STARTING AGENTIC QA PIPELINE EXECUTION")
+        if metadata:
+            logger.info(f"📄 Document: {metadata.get('title', 'Unknown')} ({metadata.get('domain', 'General')})")
         logger.info("============================================================")
         
-        state = create_initial_state(srs_text, target_url)
+        target_url = target_url or config.TARGET_URL
+        state = create_initial_state(srs_text, target_url, metadata)
 
         def _update(msg: str, step: int):
             logger.info(f"[{step}/7] {msg}")
@@ -56,35 +119,35 @@ class AgenticQAPipeline:
         # ----------------------------------------------------
         # Stage 1: Requirement Extraction
         # ----------------------------------------------------
-        _update("Stage 1/7: Extracting requirements from SRS...", 1)
+        _update("Stage 1/7: Extracting testable requirements from SRS...", 1)
         state = await self.req_extractor.invoke(state)
 
         # ----------------------------------------------------
-        # Stage 2: Requirement Validation
+        # Stage 2: Requirement Validation & Ambiguity Detection
         # ----------------------------------------------------
-        _update("Stage 2/7: Validating requirement clarity and testability...", 2)
+        _update("Stage 2/7: Auditing requirements for clarity, ambiguity, and testability...", 2)
         state = await self.req_validator.invoke(state)
 
         # ----------------------------------------------------
         # Stage 3: Risk & Coverage Planning
         # ----------------------------------------------------
-        _update("Stage 3/7: Analyzing risks and prioritizing coverage...", 3)
+        _update("Stage 3/7: Analyzing risks and prioritizing automated test suites...", 3)
         state = await self.risk_planner.invoke(state)
 
         # ----------------------------------------------------
-        # Stage 4: Test Case Design
+        # Stage 4: Test Case Design (BDD & Gherkin)
         # ----------------------------------------------------
-        _update("Stage 4/7: Designing structured test cases...", 4)
+        _update("Stage 4/7: Designing structured test cases and BDD / Gherkin specifications...", 4)
         state = await self.test_designer.invoke(state)
 
         # ----------------------------------------------------
-        # Stage 5: Review & Security Audit
+        # Stage 5: Security Review & OWASP Compliance
         # ----------------------------------------------------
-        _update("Stage 5/7: Reviewing test cases and security compliance...", 5)
+        _update("Stage 5/7: Reviewing test cases against OWASP security compliance rules...", 5)
         state = await self.reviewer.invoke(state)
 
         # ----------------------------------------------------
-        # Stage 6 & 7: Script Generation, Sandboxed Execution & Retry Loop
+        # Stage 6 & 7: Script Generation & Playwright Sandbox Execution
         # ----------------------------------------------------
         _update("Stage 6/7: Generating Playwright automation scripts...", 6)
         
@@ -99,6 +162,9 @@ class AgenticQAPipeline:
             # Execute in sandboxed Playwright engine
             exec_res = self.runner.execute_script(current_script, script_name=f"test_run_v{attempt + 1}.py")
             state["execution_result"] = exec_res
+
+            # Store per-test-case results (empty list if the run crashed, so stale results never linger)
+            state["test_results"] = exec_res.get("test_results") or []
 
             if exec_res.get("status") == "PASSED":
                 logger.info(f"✅ EXECUTION SUCCESSFUL on Attempt #{attempt + 1}!")
@@ -119,26 +185,52 @@ class AgenticQAPipeline:
                     "duration": exec_res.get("duration_seconds")
                 })
 
+                # Always analyze: even on the last attempt it tells the reviewer what failed and why
+                logger.info("⚡ Triggering Failure Analysis Agent...")
+                state = await self.failure_analyzer.invoke(state)
+                analysis = state.get("error_analysis") or {}
+                state["retry_history"][-1]["root_cause"] = analysis.get("root_cause")
+
+                if analysis.get("can_auto_recover", True) and attempt < max_retries - 1:
+                    logger.info("🔧 Failures look script/locator related - retrying with an adjusted script.")
+                    continue
+
                 if attempt < max_retries - 1:
-                    logger.info("⚡ Triggering Failure Analysis Agent for automated script repair...")
-                    state = await self.failure_analyzer.invoke(state)
+                    logger.info("🛑 Retrying cannot fix these failures - escalating without further attempts.")
                 else:
                     logger.error("❌ Max retries reached. Escalating persistent failure to Human Review.")
-                    state["human_review_required"] = True
-                    state["human_review_context"] = {
-                        "last_error": exec_res.get("error"),
-                        "total_attempts": max_retries,
-                        "script": current_script,
-                        "stdout": exec_res.get("stdout"),
-                        "stderr": exec_res.get("stderr"),
-                        "screenshots": exec_res.get("screenshots", [])
-                    }
-                    state.setdefault("metrics", {})["human_interventions"] = 1
+                state["human_review_required"] = True
+                state["human_review_context"] = {
+                    "reason": analysis.get("escalation_reason", "persistent_failure"),
+                    "last_error": exec_res.get("error"),
+                    "total_attempts": attempt + 1,
+                    "summary": analysis.get("summary", {}),
+                    "failures": analysis.get("failures", []),
+                    "script": current_script,
+                    "stdout": exec_res.get("stdout"),
+                    "stderr": exec_res.get("stderr"),
+                    "screenshots": exec_res.get("screenshots", [])
+                }
+                state.setdefault("metrics", {})["human_interventions"] = 1
+                break
+
+        # Build requirement → test → execution traceability
+        state["traceability"] = build_traceability(
+            state.get("requirements", []),
+            state.get("test_cases", []),
+            state.get("test_results", [])
+        )
 
         state["final_results"] = {
             "completed_at": datetime.now().isoformat(),
             "status": "PASSED" if not state.get("human_review_required") else "REQUIRES_HUMAN_REVIEW",
-            "passed": state.get("execution_result", {}).get("status") == "PASSED"
+            "passed": state.get("execution_result", {}).get("status") == "PASSED",
+            "document_title": metadata.get("title") if metadata else "Custom SRS",
+            "domain": metadata.get("domain") if metadata else "General",
+            "total_requirements": len(state.get("requirements", [])),
+            "testability_score": state.get("quality_metrics", {}).get("testability_score", 85),
+            "total_test_cases": len(state.get("test_cases", [])),
+            "approved_test_cases": len(state.get("approved_test_cases", []))
         }
 
         self.save_results(state)
@@ -157,14 +249,13 @@ class AgenticQAPipeline:
         except Exception as e:
             logger.error(f"Failed to save pipeline results: {e}")
 
-async def run_pipeline(srs_text: str, target_url: str = "") -> AgentState:
+async def run_pipeline(srs_text: str, target_url: str = "", metadata: Optional[Dict[str, Any]] = None) -> AgentState:
     pipeline = AgenticQAPipeline()
-    return await pipeline.run(srs_text, target_url)
+    return await pipeline.run(srs_text, target_url, metadata=metadata)
 
 if __name__ == "__main__":
-    sample_srs = """
-    User Authentication Specification:
-    1. The system shall allow registered users to log in with email and password.
-    2. The system must display a clear error message when invalid credentials are provided.
-    """
-    asyncio.run(run_pipeline(sample_srs))
+    from config import config
+    default_srs = config.get_default_srs_path()
+    with open(default_srs, "r", encoding="utf-8") as f:
+        content = f.read()
+    asyncio.run(run_pipeline(content, metadata={"title": "Default SRS", "domain": "Security"}))

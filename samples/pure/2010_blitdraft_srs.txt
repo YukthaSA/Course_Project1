@@ -1,0 +1,265 @@
+===========================================================================
+SYSTEM REQUIREMENTS SPECIFICATION (SRS)
+PROJECT: BLITDRAFT ENTERPRISE DOCUMENT SYSTEM
+DOMAIN:  Enterprise Document Management
+SOURCE:  PURE Benchmark Dataset (IEEE RE 2017 / ISTI-CNR)
+===========================================================================
+
+1. SYSTEM OVERVIEW & SCOPE
+   Multi-user revision versioning, vector rendering, electronic signatures, and access control.
+
+2. TESTABLE SOFTWARE REQUIREMENTS (84 Specifications)
+---------------------------------------------------------------------------
+
+[REQ-001] [Security] Priority: High
+Requirement: The management of [company name]. has identified a potential need for re-writing its core Laboratory Information System (LIS) to improve the performance. In general, this project will provide a stable environment, automate decisions, streamline workflows, and employ industry standard coding and documentation practices. This effort will ensure System Integrity/Reliability by developing a system that is reliable and low maintenance including security and confidentiality requirements as dictated by HIPAA and FDA regulatory standards.
+
+[REQ-002] [UI] Priority: Medium
+Requirement: This Functional Requirements Specification (FRS) is intended to capture the changes in functionality that will occur during [system name] Re-Writing effort, which is part of the xxx Enhancements project. All functionalities for the new [system name] system would be documented in this FRS. Any undocumented requirements will be considered out of scope and will not be implemented during this phase of Re-Writing.
+
+[REQ-003] [UI] Priority: Medium
+Requirement: The existing functionalities in the core [system name] will remain same. This project is limited in scope to the enhancements and defects that are critical in the severity level that is the issues that cause great burden to the system users and the enhancements in system architecture, which will facilitate efficient growth of [system name] and the [company name] business, will fall under the purview of this project scope. The functional issues and requirements that will be discussed and gathered respectively as well as validated in the Requirements Gathering and Validating Sessions started on MM/DD/YYYYwould be documented in this FRS moving forward. The project team has decided that system development will occur on module by module basis.
+
+[REQ-004] [UI] Priority: High
+Requirement: System shall display the hyperlinks and descriptions for the user to perform the desired functions as specified in the related UIS.
+
+[REQ-005] [UI] Priority: High
+Requirement: The User shall be able to view the hyperlinks and descriptions listed.
+
+[REQ-006] [UI] Priority: High
+Requirement: The User shall be able to choose a function by clicking the hyperlink.
+
+[REQ-007] [UI] Priority: High
+Requirement: The system shall display the desired operational page for the user after clicking the hyperlink.
+
+[REQ-008] [Functional] Priority: High
+Requirement: A user with admin privileges shall be able to Add/Create a new user and associate the user with specified role(s) in the system.
+
+[REQ-009] [UI] Priority: High
+Requirement: The system shall display an error message if the new user is found in the [system name] system.
+
+[REQ-010] [UI] Priority: High
+Requirement: The system shall display an error message if the new user is not active in the Active Directory.
+
+[REQ-011] [UI] Priority: High
+Requirement: The system shall display the xxx tab as the default tab.
+
+[REQ-012] [Functional] Priority: High
+Requirement: The user shall be able to create/add a new user manually or from a template.
+
+[REQ-013] [Functional] Priority: High
+Requirement: The user record shall inherit all specified role(s) settings in the template when the user record is created from the user template
+
+[REQ-014] [Functional] Priority: High
+Requirement: The user shall be able to add additional roles manually while creating/adding a new user from a user template.
+
+[REQ-015] [Functional] Priority: High
+Requirement: The system shall save the user info to the database with specified roles associated with divisions for the newly created/added user.
+
+[REQ-016] [UI] Priority: High
+Requirement: The system shall perform a search on the [system name] user display name and user name columns in the user tables to find the user and verify the user’s existence.
+
+[REQ-017] [Functional] Priority: High
+Requirement: The system shall perform a search in the Active Directory to verify the status of the user — Active/Inactive within the company—when the user attempts to create/add a new user in the [system name] system.
+
+[REQ-018] [Functional] Priority: High
+Requirement: The system shall generate a standard confirmation message after saving data and warning/caution messages after the cancel or close button is clicked.
+
+[REQ-019] [UI] Priority: High
+Requirement: The user must have the flexibility to click any tab to commence the adding process, although the xxx Tab shall display as the default tab.
+
+[REQ-020] [UI] Priority: Medium
+Requirement: All required fields as specified in the UIS must be marked with a red asterisk alerting the user to fill the required fields in.
+
+[REQ-021] [Functional] Priority: High
+Requirement: The user shall be able to save data after creating/adding a new user or cancel data to abort the process.
+
+[REQ-022] [Functional] Priority: High
+Requirement: The system shall clear up data if the user chooses to click the Cancel button in the midst of creating/adding a new user.
+
+[REQ-023] [UI] Priority: High
+Requirement: The system shall direct the user to the xxx Page if the user chooses to click the close button without entering any data.
+
+[REQ-024] [Functional] Priority: Medium
+Requirement: The user must associate at least one role, division, designator code, and lab location at the time of creating/adding a new user.
+
+[REQ-025] [UI] Priority: Medium
+Requirement: The user must fill in the required fields—User Name and Display Name—in the User Information section at the time of creating/adding a new user.
+
+[REQ-026] [UI] Priority: High
+Requirement: The system shall generate a standard error/warning message after the user attempts to save data without associating one of each of the following criteria—xxx—and/or without filling in the required fields in the User Information section.
+
+[REQ-027] [UI] Priority: Medium
+Requirement: The Project Team must demonstrate mockups of UI changes to project stakeholders early in the development process.
+
+[REQ-028] [Functional] Priority: Medium
+Requirement: The Project Team must permit reasonable adjustment to the user interfaces of new functionality by project stakeholders when project schedule permits those adjustments.
+
+[REQ-029] [Functional] Priority: High
+Requirement: The Project Team shall schedule updates to the production environment only on Tuesdays between 7pm and 7am. (Example)
+
+[REQ-030] [UI] Priority: Medium
+Requirement: The Project Team must perform applicable and appropriate testing against new functionality prior to releasing that functionality/build to the production environment.
+
+[REQ-031] [UI] Priority: Medium
+Requirement: The project Team must allow a reasonable time to conduct User Acceptance Testing (UAT) against the built functionalities prior to deploying the product to the production environment.
+
+[REQ-032] [Functional] Priority: High
+Requirement: The Development Team shall define coding standards for the application and follow those standards consistently.
+
+[REQ-033] [UI] Priority: High
+Requirement: The Development Team shall be required to adjust existing source code to follow accepted coding standards only if that source code must be modified.
+
+[REQ-034] [Functional] Priority: High
+Requirement: The system shall log errors, warnings, and informational messages to an external log file on the application server.
+
+[REQ-035] [UI] Priority: High
+Requirement: The Development Team shall be required to adjust existing source code to use the external log file only if that source code must be modified to implement another requirement.
+
+[REQ-036] [UI] Priority: High
+Requirement: The system shall log an error message to the external data file when the user is directed to the [SYSTEM NAME] error page.
+
+[REQ-037] [UI] Priority: High
+Requirement: The system shall send a notification email to a Client Services email distribution list if the user is directed to the xxx error page.
+
+[REQ-038] [Functional] Priority: High
+Requirement: The Development Team shall develop functionalities using the xx language and on the supported .NET 3.5 Platform.
+
+[REQ-039] [Functional] Priority: High
+Requirement: The Development Team shall utilize established open source frameworks instead of proprietary custom components wherever appropriate.
+
+[REQ-040] [Functional] Priority: High
+Requirement: The system shall continue to depend upon and use a single SQL Server 2008 database.
+
+[REQ-041] [UI] Priority: High
+Requirement: The Technical Owner/Lead shall provide signoff before any [SYSTEM NAME] build can be deployed to the production environment.
+
+[REQ-042] [Functional] Priority: High
+Requirement: The Development Team shall perform weekly integrations of the [SYSTEM NAME] system and deploy these system updates to the Staging environment.
+
+[REQ-043] [UI] Priority: High
+Requirement: The Development Team shall label every scheduled [SYSTEM NAME] build in the source control system.
+
+[REQ-044] [UI] Priority: High
+Requirement: The Development Team shall perform scheduled [SYSTEM NAME] builds using code checked out of source control using the label as defined and specified.
+
+[REQ-045] [UI] Priority: High
+Requirement: The Development Team shall develop and then send out release notes via e-mail to all Project Team after each [SYSTEM NAME] build deployed to the Staging environment.
+
+[REQ-046] [Functional] Priority: High
+Requirement: The Technical Lead shall perform code reviews of every system change before those changes may be committed to source control.
+
+[REQ-047] [UI] Priority: Medium
+Requirement: The QA/QC Team must perform regression testing against all scheduled builds.
+
+[REQ-048] [UI] Priority: Medium
+Requirement: RoboHelp version 8 will be used to create the online [system name] Help hypertext links. The [system name] system will display a hypertext link labeled “Help” at the top right corner on each of the user screens to provide assistance to the user. Each of the Help topic pop-up windows will contain that same content that is available within the [system name] user’s manuals.
+
+[REQ-049] [UI] Priority: High
+Requirement: The system shall provide the capability to open a pop-up window displaying information about the specific page along with links to supporting help topics upon selecting each Help link.
+
+[REQ-050] [UI] Priority: High
+Requirement: The system shall display “[system name] Overview” page located under the Getting Started section of Help as default help topic page that will load upon selecting Help hypertext link.
+
+[REQ-051] [UI] Priority: Medium
+Requirement: The system must allow users to easily navigate through each of the help topics by selecting a corresponding hypertext link provided in the left frame of the pop-up Help window.
+
+[REQ-052] [UI] Priority: High
+Requirement: The system shall display the [company name] logo in the top, right side of the screen on each of the help pages.
+
+[REQ-053] [UI] Priority: Medium
+Requirement: The system must exhibit each of the help pages using the same color scheme and background as specified.
+
+[REQ-054] [UI] Priority: High
+Requirement: The system shall provide searching ability to the users to quickly find specific topic material through the online help tool.
+
+[REQ-055] [Functional] Priority: High
+Requirement: The system shall provide an index to the users for a more in-depth search of topic contents through the online help tool.
+
+[REQ-056] [Functional] Priority: High
+Requirement: The system shall provide a Glossary for industry-related terms associated with [company name] and the [system name] system to the users through the online help tool.
+
+[REQ-057] [Functional] Priority: High
+Requirement: The system shall retain existing HIPAA compliance capabilities.
+
+[REQ-058] [Functional] Priority: High
+Requirement: The system shall follow HIPAA compliance capabilities in new functionality introduced to the system.
+
+[REQ-059] [Security] Priority: High
+Requirement: Introduction The management of [company name]. has identified a potential need for re-writing its core Laboratory Information System (LIS) to improve the performance. In general, this project will provide a stable environment, automate decisions, streamline workflows, and employ industry standard coding and documentation practices. This effort will ensure System Integrity/Reliability by developing a system that is reliable and low maintenance including security and confidentiality requirements as dictated by HIPAA and FDA regulatory standards. Purpose This Functional Requirements Specification (FRS) is intended to capture the changes in functionality that will occur during [system name] Re-Writing effort, which is part of the xxx Enhancements project. All functionalities for the new [system name] system would be documented in this FRS. Any undocumented requirements will be considered out of scope and will not be implemented during this phase of Re-Writing. Scope The existing functionalities in the core [system name] will remain same. This project is limited in scope to the enhancements and defects that are critical in the severity level that is the issues that cause great burden to the system users and the enhancements in system architecture, which will facilitate efficient growth of [system name] and the [company name] business, will fall under the purview of this project scope. The functional issues and requirements that will be discussed and gathered respectively as well as validated in the Requirements Gathering and Validating Sessions started on MM/DD/YYYYwould be documented in this FRS moving forward. The project team has decided that system development will occur on module by module basis.
+
+[REQ-060] [UI] Priority: Medium
+Requirement: Purpose This Functional Requirements Specification (FRS) is intended to capture the changes in functionality that will occur during [system name] Re-Writing effort, which is part of the xxx Enhancements project. All functionalities for the new [system name] system would be documented in this FRS. Any undocumented requirements will be considered out of scope and will not be implemented during this phase of Re-Writing.
+
+[REQ-061] [UI] Priority: Medium
+Requirement: Scope The existing functionalities in the core [system name] will remain same. This project is limited in scope to the enhancements and defects that are critical in the severity level that is the issues that cause great burden to the system users and the enhancements in system architecture, which will facilitate efficient growth of [system name] and the [company name] business, will fall under the purview of this project scope. The functional issues and requirements that will be discussed and gathered respectively as well as validated in the Requirements Gathering and Validating Sessions started on MM/DD/YYYYwould be documented in this FRS moving forward. The project team has decided that system development will occur on module by module basis.
+
+[REQ-062] [UI] Priority: High
+Requirement: Specific Requirements Functionality Module: Admin Use Case: xxx Page, UC ID: UC_RR_xxx_xxx_000 System shall display the hyperlinks and descriptions for the user to perform the desired functions as specified in the related UIS. The User shall be able to view the hyperlinks and descriptions listed. The User shall be able to choose a function by clicking the hyperlink. The system shall display the desired operational page for the user after clicking the hyperlink. Use Case: xxx Page, UC ID: UC_RR_xxx_xxx_000 Action: Create/Add User A user with admin privileges shall be able to Add/Create a new user and associate the user with specified role(s) in the system. The system shall display an error message if the new user is found in the [system name] system. The system shall display an error message if the new user is not active in the Active Directory. The system shall display the xxx tab as the default tab. The user shall be able to create/add a new user manually or from a template. The user record shall inherit all specified role(s) settings in the template when the user record is created from the user template The user shall be able to add additional roles manually while creating/adding a new user from a user template. The system shall save the user info to the database with specified roles associated with divisions for the newly created/added user. The system shall perform a search on the [system name] user display name and user name columns in the user tables to find the user and verify the user’s existence. The system shall perform a search in the Active Directory to verify the status of the user — Active/Inactive within the company—when the user attempts to create/add a new user in the [system name] system. The system shall generate a standard confirmation message after saving data and warning/caution messages after the cancel or close button is clicked. The user must have the flexibility to click any tab to commence the adding process, although the xxx Tab shall display as the default tab. All required fields as specified in the UIS must be marked with a red asterisk alerting the user to fill the required fields in. The user shall be able to save data after creating/adding a new user or cancel data to abort the process. The system shall clear up data if the user chooses to click the Cancel button in the midst of creating/adding a new user. The system shall direct the user to the xxx Page if the user chooses to click the close button without entering any data. The user must associate at least one role, division, designator code, and lab location at the time of creating/adding a new user. The user must fill in the required fields—User Name and Display Name—in the User Information section at the time of creating/adding a new user. The system shall generate a standard error/warning message after the user attempts to save data without associating one of each of the following criteria—xxx—and/or without filling in the required fields in the User Information section. Usability User Interface Guidelines The Project Team must demonstrate mockups of UI changes to project stakeholders early in the development process. The Project Team must permit reasonable adjustment to the user interfaces of new functionality by project stakeholders when project schedule permits those adjustments. Reliability System Downtime The Project Team shall schedule updates to the production environment only on Tuesdays between 7pm and 7am. (Example) Performance Quality Assurance The Project Team must perform applicable and appropriate testing against new functionality prior to releasing that functionality/build to the production environment. The project Team must allow a reasonable time to conduct User Acceptance Testing (UAT) against the built functionalities prior to deploying the product to the production environment. Supportability Coding Standards The Development Team shall define coding standards for the application and follow those standards consistently. The Development Team shall be required to adjust existing source code to follow accepted coding standards only if that source code must be modified. Maintainability Standards The system shall log errors, warnings, and informational messages to an external log file on the application server. The Development Team shall be required to adjust existing source code to use the external log file only if that source code must be modified to implement another requirement. The system shall log an error message to the external data file when the user is directed to the [SYSTEM NAME] error page. The system shall send a notification email to a Client Services email distribution list if the user is directed to the xxx error page. Design Constraints Development Platform The Development Team shall develop functionalities using the xx language and on the supported .NET 3.5 Platform. The Development Team shall utilize established open source frameworks instead of proprietary custom components wherever appropriate. The system shall continue to depend upon and use a single SQL Server 2008 database. Production Releases The Technical Owner/Lead shall provide signoff before any [SYSTEM NAME] build can be deployed to the production environment. Development Process The Development Team shall perform weekly integrations of the [SYSTEM NAME] system and deploy these system updates to the Staging environment. The Development Team shall label every scheduled [SYSTEM NAME] build in the source control system. The Development Team shall perform scheduled [SYSTEM NAME] builds using code checked out of source control using the label as defined and specified. The Development Team shall develop and then send out release notes via e-mail to all Project Team after each [SYSTEM NAME] build deployed to the Staging environment. The Technical Lead shall perform code reviews of every system change before those changes may be committed to source control. The QA/QC Team must perform regression testing against all scheduled builds. Online User Documentation and Help System Requirements Robohelp Tool: RoboHelp version 8 will be used to create the online [system name] Help hypertext links. The [system name] system will display a hypertext link labeled “Help” at the top right corner on each of the user screens to provide assistance to the user. Each of the Help topic pop-up windows will contain that same content that is available within the [system name] user’s manuals. The system shall provide the capability to open a pop-up window displaying information about the specific page along with links to supporting help topics upon selecting each Help link. The system shall display “[system name] Overview” page located under the Getting Started section of Help as default help topic page that will load upon selecting Help hypertext link. The system must allow users to easily navigate through each of the help topics by selecting a corresponding hypertext link provided in the left frame of the pop-up Help window. The system shall display the [company name] logo in the top, right side of the screen on each of the help pages. The system must exhibit each of the help pages using the same color scheme and background as specified. The system shall provide searching ability to the users to quickly find specific topic material through the online help tool. The system shall provide an index to the users for a more in-depth search of topic contents through the online help tool. The system shall provide a Glossary for industry-related terms associated with [company name] and the [system name] system to the users through the online help tool. Interfaces Applicable Standards The system shall retain existing HIPAA compliance capabilities. The system shall follow HIPAA compliance capabilities in new functionality introduced to the system.
+
+[REQ-063] [UI] Priority: High
+Requirement: Functionality Module: Admin Use Case: xxx Page, UC ID: UC_RR_xxx_xxx_000 System shall display the hyperlinks and descriptions for the user to perform the desired functions as specified in the related UIS. The User shall be able to view the hyperlinks and descriptions listed. The User shall be able to choose a function by clicking the hyperlink. The system shall display the desired operational page for the user after clicking the hyperlink. Use Case: xxx Page, UC ID: UC_RR_xxx_xxx_000 Action: Create/Add User A user with admin privileges shall be able to Add/Create a new user and associate the user with specified role(s) in the system. The system shall display an error message if the new user is found in the [system name] system. The system shall display an error message if the new user is not active in the Active Directory. The system shall display the xxx tab as the default tab. The user shall be able to create/add a new user manually or from a template. The user record shall inherit all specified role(s) settings in the template when the user record is created from the user template The user shall be able to add additional roles manually while creating/adding a new user from a user template. The system shall save the user info to the database with specified roles associated with divisions for the newly created/added user. The system shall perform a search on the [system name] user display name and user name columns in the user tables to find the user and verify the user’s existence. The system shall perform a search in the Active Directory to verify the status of the user — Active/Inactive within the company—when the user attempts to create/add a new user in the [system name] system. The system shall generate a standard confirmation message after saving data and warning/caution messages after the cancel or close button is clicked. The user must have the flexibility to click any tab to commence the adding process, although the xxx Tab shall display as the default tab. All required fields as specified in the UIS must be marked with a red asterisk alerting the user to fill the required fields in. The user shall be able to save data after creating/adding a new user or cancel data to abort the process. The system shall clear up data if the user chooses to click the Cancel button in the midst of creating/adding a new user. The system shall direct the user to the xxx Page if the user chooses to click the close button without entering any data. The user must associate at least one role, division, designator code, and lab location at the time of creating/adding a new user. The user must fill in the required fields—User Name and Display Name—in the User Information section at the time of creating/adding a new user. The system shall generate a standard error/warning message after the user attempts to save data without associating one of each of the following criteria—xxx—and/or without filling in the required fields in the User Information section.
+
+[REQ-064] [UI] Priority: High
+Requirement: Module: Admin Use Case: xxx Page, UC ID: UC_RR_xxx_xxx_000 System shall display the hyperlinks and descriptions for the user to perform the desired functions as specified in the related UIS. The User shall be able to view the hyperlinks and descriptions listed. The User shall be able to choose a function by clicking the hyperlink. The system shall display the desired operational page for the user after clicking the hyperlink. Use Case: xxx Page, UC ID: UC_RR_xxx_xxx_000 Action: Create/Add User A user with admin privileges shall be able to Add/Create a new user and associate the user with specified role(s) in the system. The system shall display an error message if the new user is found in the [system name] system. The system shall display an error message if the new user is not active in the Active Directory. The system shall display the xxx tab as the default tab. The user shall be able to create/add a new user manually or from a template. The user record shall inherit all specified role(s) settings in the template when the user record is created from the user template The user shall be able to add additional roles manually while creating/adding a new user from a user template. The system shall save the user info to the database with specified roles associated with divisions for the newly created/added user. The system shall perform a search on the [system name] user display name and user name columns in the user tables to find the user and verify the user’s existence. The system shall perform a search in the Active Directory to verify the status of the user — Active/Inactive within the company—when the user attempts to create/add a new user in the [system name] system. The system shall generate a standard confirmation message after saving data and warning/caution messages after the cancel or close button is clicked. The user must have the flexibility to click any tab to commence the adding process, although the xxx Tab shall display as the default tab. All required fields as specified in the UIS must be marked with a red asterisk alerting the user to fill the required fields in. The user shall be able to save data after creating/adding a new user or cancel data to abort the process. The system shall clear up data if the user chooses to click the Cancel button in the midst of creating/adding a new user. The system shall direct the user to the xxx Page if the user chooses to click the close button without entering any data. The user must associate at least one role, division, designator code, and lab location at the time of creating/adding a new user. The user must fill in the required fields—User Name and Display Name—in the User Information section at the time of creating/adding a new user. The system shall generate a standard error/warning message after the user attempts to save data without associating one of each of the following criteria—xxx—and/or without filling in the required fields in the User Information section.
+
+[REQ-065] [UI] Priority: High
+Requirement: Use Case: xxx Page, UC ID: UC_RR_xxx_xxx_000 System shall display the hyperlinks and descriptions for the user to perform the desired functions as specified in the related UIS. The User shall be able to view the hyperlinks and descriptions listed. The User shall be able to choose a function by clicking the hyperlink. The system shall display the desired operational page for the user after clicking the hyperlink.
+
+[REQ-070] [UI] Priority: High
+Requirement: Use Case: xxx Page, UC ID: UC_RR_xxx_xxx_000 Action: Create/Add User A user with admin privileges shall be able to Add/Create a new user and associate the user with specified role(s) in the system. The system shall display an error message if the new user is found in the [system name] system. The system shall display an error message if the new user is not active in the Active Directory. The system shall display the xxx tab as the default tab. The user shall be able to create/add a new user manually or from a template. The user record shall inherit all specified role(s) settings in the template when the user record is created from the user template The user shall be able to add additional roles manually while creating/adding a new user from a user template. The system shall save the user info to the database with specified roles associated with divisions for the newly created/added user. The system shall perform a search on the [system name] user display name and user name columns in the user tables to find the user and verify the user’s existence. The system shall perform a search in the Active Directory to verify the status of the user — Active/Inactive within the company—when the user attempts to create/add a new user in the [system name] system. The system shall generate a standard confirmation message after saving data and warning/caution messages after the cancel or close button is clicked. The user must have the flexibility to click any tab to commence the adding process, although the xxx Tab shall display as the default tab. All required fields as specified in the UIS must be marked with a red asterisk alerting the user to fill the required fields in. The user shall be able to save data after creating/adding a new user or cancel data to abort the process. The system shall clear up data if the user chooses to click the Cancel button in the midst of creating/adding a new user. The system shall direct the user to the xxx Page if the user chooses to click the close button without entering any data. The user must associate at least one role, division, designator code, and lab location at the time of creating/adding a new user. The user must fill in the required fields—User Name and Display Name—in the User Information section at the time of creating/adding a new user. The system shall generate a standard error/warning message after the user attempts to save data without associating one of each of the following criteria—xxx—and/or without filling in the required fields in the User Information section.
+
+[REQ-071] [UI] Priority: High
+Requirement: Action: Create/Add User A user with admin privileges shall be able to Add/Create a new user and associate the user with specified role(s) in the system. The system shall display an error message if the new user is found in the [system name] system. The system shall display an error message if the new user is not active in the Active Directory. The system shall display the xxx tab as the default tab. The user shall be able to create/add a new user manually or from a template. The user record shall inherit all specified role(s) settings in the template when the user record is created from the user template The user shall be able to add additional roles manually while creating/adding a new user from a user template. The system shall save the user info to the database with specified roles associated with divisions for the newly created/added user. The system shall perform a search on the [system name] user display name and user name columns in the user tables to find the user and verify the user’s existence. The system shall perform a search in the Active Directory to verify the status of the user — Active/Inactive within the company—when the user attempts to create/add a new user in the [system name] system. The system shall generate a standard confirmation message after saving data and warning/caution messages after the cancel or close button is clicked. The user must have the flexibility to click any tab to commence the adding process, although the xxx Tab shall display as the default tab. All required fields as specified in the UIS must be marked with a red asterisk alerting the user to fill the required fields in. The user shall be able to save data after creating/adding a new user or cancel data to abort the process. The system shall clear up data if the user chooses to click the Cancel button in the midst of creating/adding a new user. The system shall direct the user to the xxx Page if the user chooses to click the close button without entering any data. The user must associate at least one role, division, designator code, and lab location at the time of creating/adding a new user. The user must fill in the required fields—User Name and Display Name—in the User Information section at the time of creating/adding a new user. The system shall generate a standard error/warning message after the user attempts to save data without associating one of each of the following criteria—xxx—and/or without filling in the required fields in the User Information section.
+
+[REQ-091] [UI] Priority: Medium
+Requirement: Usability User Interface Guidelines The Project Team must demonstrate mockups of UI changes to project stakeholders early in the development process. The Project Team must permit reasonable adjustment to the user interfaces of new functionality by project stakeholders when project schedule permits those adjustments.
+
+[REQ-092] [UI] Priority: Medium
+Requirement: User Interface Guidelines The Project Team must demonstrate mockups of UI changes to project stakeholders early in the development process. The Project Team must permit reasonable adjustment to the user interfaces of new functionality by project stakeholders when project schedule permits those adjustments.
+
+[REQ-095] [Functional] Priority: High
+Requirement: Reliability System Downtime The Project Team shall schedule updates to the production environment only on Tuesdays between 7pm and 7am. (Example)
+
+[REQ-096] [Functional] Priority: High
+Requirement: System Downtime The Project Team shall schedule updates to the production environment only on Tuesdays between 7pm and 7am. (Example)
+
+[REQ-098] [UI] Priority: Medium
+Requirement: Performance Quality Assurance The Project Team must perform applicable and appropriate testing against new functionality prior to releasing that functionality/build to the production environment. The project Team must allow a reasonable time to conduct User Acceptance Testing (UAT) against the built functionalities prior to deploying the product to the production environment.
+
+[REQ-099] [UI] Priority: Medium
+Requirement: Quality Assurance The Project Team must perform applicable and appropriate testing against new functionality prior to releasing that functionality/build to the production environment. The project Team must allow a reasonable time to conduct User Acceptance Testing (UAT) against the built functionalities prior to deploying the product to the production environment.
+
+[REQ-102] [UI] Priority: High
+Requirement: Supportability Coding Standards The Development Team shall define coding standards for the application and follow those standards consistently. The Development Team shall be required to adjust existing source code to follow accepted coding standards only if that source code must be modified. Maintainability Standards The system shall log errors, warnings, and informational messages to an external log file on the application server. The Development Team shall be required to adjust existing source code to use the external log file only if that source code must be modified to implement another requirement. The system shall log an error message to the external data file when the user is directed to the [SYSTEM NAME] error page. The system shall send a notification email to a Client Services email distribution list if the user is directed to the xxx error page.
+
+[REQ-103] [UI] Priority: High
+Requirement: Coding Standards The Development Team shall define coding standards for the application and follow those standards consistently. The Development Team shall be required to adjust existing source code to follow accepted coding standards only if that source code must be modified.
+
+[REQ-106] [UI] Priority: High
+Requirement: Maintainability Standards The system shall log errors, warnings, and informational messages to an external log file on the application server. The Development Team shall be required to adjust existing source code to use the external log file only if that source code must be modified to implement another requirement. The system shall log an error message to the external data file when the user is directed to the [SYSTEM NAME] error page. The system shall send a notification email to a Client Services email distribution list if the user is directed to the xxx error page.
+
+[REQ-111] [UI] Priority: High
+Requirement: Design Constraints Development Platform The Development Team shall develop functionalities using the xx language and on the supported .NET 3.5 Platform. The Development Team shall utilize established open source frameworks instead of proprietary custom components wherever appropriate. The system shall continue to depend upon and use a single SQL Server 2008 database. Production Releases The Technical Owner/Lead shall provide signoff before any [SYSTEM NAME] build can be deployed to the production environment. Development Process The Development Team shall perform weekly integrations of the [SYSTEM NAME] system and deploy these system updates to the Staging environment. The Development Team shall label every scheduled [SYSTEM NAME] build in the source control system. The Development Team shall perform scheduled [SYSTEM NAME] builds using code checked out of source control using the label as defined and specified. The Development Team shall develop and then send out release notes via e-mail to all Project Team after each [SYSTEM NAME] build deployed to the Staging environment. The Technical Lead shall perform code reviews of every system change before those changes may be committed to source control. The QA/QC Team must perform regression testing against all scheduled builds.
+
+[REQ-112] [Functional] Priority: High
+Requirement: Development Platform The Development Team shall develop functionalities using the xx language and on the supported .NET 3.5 Platform. The Development Team shall utilize established open source frameworks instead of proprietary custom components wherever appropriate. The system shall continue to depend upon and use a single SQL Server 2008 database.
+
+[REQ-116] [UI] Priority: High
+Requirement: Production Releases The Technical Owner/Lead shall provide signoff before any [SYSTEM NAME] build can be deployed to the production environment.
+
+[REQ-118] [UI] Priority: High
+Requirement: Development Process The Development Team shall perform weekly integrations of the [SYSTEM NAME] system and deploy these system updates to the Staging environment. The Development Team shall label every scheduled [SYSTEM NAME] build in the source control system. The Development Team shall perform scheduled [SYSTEM NAME] builds using code checked out of source control using the label as defined and specified. The Development Team shall develop and then send out release notes via e-mail to all Project Team after each [SYSTEM NAME] build deployed to the Staging environment. The Technical Lead shall perform code reviews of every system change before those changes may be committed to source control. The QA/QC Team must perform regression testing against all scheduled builds.
+
+[REQ-125] [UI] Priority: High
+Requirement: Online User Documentation and Help System Requirements Robohelp Tool: RoboHelp version 8 will be used to create the online [system name] Help hypertext links. The [system name] system will display a hypertext link labeled “Help” at the top right corner on each of the user screens to provide assistance to the user. Each of the Help topic pop-up windows will contain that same content that is available within the [system name] user’s manuals. The system shall provide the capability to open a pop-up window displaying information about the specific page along with links to supporting help topics upon selecting each Help link. The system shall display “[system name] Overview” page located under the Getting Started section of Help as default help topic page that will load upon selecting Help hypertext link. The system must allow users to easily navigate through each of the help topics by selecting a corresponding hypertext link provided in the left frame of the pop-up Help window. The system shall display the [company name] logo in the top, right side of the screen on each of the help pages. The system must exhibit each of the help pages using the same color scheme and background as specified. The system shall provide searching ability to the users to quickly find specific topic material through the online help tool. The system shall provide an index to the users for a more in-depth search of topic contents through the online help tool. The system shall provide a Glossary for industry-related terms associated with [company name] and the [system name] system to the users through the online help tool.
+
+[REQ-126] [UI] Priority: High
+Requirement: Robohelp Tool: RoboHelp version 8 will be used to create the online [system name] Help hypertext links. The [system name] system will display a hypertext link labeled “Help” at the top right corner on each of the user screens to provide assistance to the user. Each of the Help topic pop-up windows will contain that same content that is available within the [system name] user’s manuals. The system shall provide the capability to open a pop-up window displaying information about the specific page along with links to supporting help topics upon selecting each Help link. The system shall display “[system name] Overview” page located under the Getting Started section of Help as default help topic page that will load upon selecting Help hypertext link. The system must allow users to easily navigate through each of the help topics by selecting a corresponding hypertext link provided in the left frame of the pop-up Help window. The system shall display the [company name] logo in the top, right side of the screen on each of the help pages. The system must exhibit each of the help pages using the same color scheme and background as specified. The system shall provide searching ability to the users to quickly find specific topic material through the online help tool. The system shall provide an index to the users for a more in-depth search of topic contents through the online help tool. The system shall provide a Glossary for industry-related terms associated with [company name] and the [system name] system to the users through the online help tool.
+
+[REQ-135] [Functional] Priority: High
+Requirement: Applicable Standards The system shall retain existing HIPAA compliance capabilities. The system shall follow HIPAA compliance capabilities in new functionality introduced to the system.
+
+[REQ-136] [Functional] Priority: High
+Requirement: The system shall retain existing HIPAA compliance capabilities. The system shall follow HIPAA compliance capabilities in new functionality introduced to the system.
+
