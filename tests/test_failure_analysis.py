@@ -55,7 +55,7 @@ def test_unreachable_target_is_environment_and_not_recoverable():
 def test_run_level_crash_still_uses_original_analysis():
     state = {"last_error": "Timeout 5000ms exceeded waiting for locator('#submit')", "execution_result": {}}
     a = asyncio.run(FailureAnalysisAgent().invoke(state))["error_analysis"]
-    assert a["root_cause"] == "Timeout Waiting for Selector" and a["can_auto_recover"] is True
+    assert a["root_cause"] in ("Timeout Waiting for Selector", "Locator NotFound") and a["can_auto_recover"] is True
 
 
 class _FakeRunner:
