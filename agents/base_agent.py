@@ -93,24 +93,146 @@ class BaseAgent(ABC):
         self,
         prompt: str,
         system_instruction: str = "",
-        model_name: str = "gemini-2.0-flash",
-        mock_fallback: Optional[Callable[[], str]] = None
+        model_name: Optional[str] = None,
+        mock_fallback: Optional[Callable[[], str]] = None,
+        provider: Optional[str] = None
     ) -> str:
-        """Call LLM API if key is valid; otherwise fallback to smart deterministic implementation"""
-        if self.config.has_valid_google_key:
+        """Call LLM API across configured providers: Gemini, Groq, Ollama, OpenAI, Anthropic.
+        Falls back seamlessly to smart deterministic agent implementation.
+        """
+        active_provider = (provider or self.config.LLM_PROVIDER or "auto").lower()
+        full_prompt = f"{system_instruction}\n\n{prompt}" if system_instruction else prompt
+
+        # 1. Groq Provider
+        if active_provider == "groq" or (active_provider == "auto" and self.config.has_valid_groq_key):
+            try:
+                import urllib.request
+                groq_model = model_name or self.config.GROQ_MODEL
+                headers = {
+                    "Authorization": f"Bearer {self.config.GROQ_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": groq_model,
+                    "messages": [
+                        *([{"role": "system", "content": system_instruction}] if system_instruction else []),
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.2
+                }
+                req = urllib.request.Request(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers=headers
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    text = data["choices"][0]["message"]["content"]
+                    if text:
+                        return text
+            except Exception as e:
+                self.log_error(f"Groq API call failed: {e}")
+
+        # 2. Ollama Local Provider (via OpenAI-compatible endpoint)
+        if active_provider == "ollama" or (active_provider == "auto" and not self.config.has_valid_google_key and self.config.is_ollama_available):
+            try:
+                import urllib.request
+                ollama_model = model_name or self.config.OLLAMA_MODEL
+                url = f"{self.config.OLLAMA_BASE_URL.rstrip('/')}/v1/chat/completions"
+                payload = {
+                    "model": ollama_model,
+                    "messages": [
+                        *([{"role": "system", "content": system_instruction}] if system_instruction else []),
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.2
+                }
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    text = data["choices"][0]["message"]["content"]
+                    if text:
+                        return text
+            except Exception as e:
+                self.log_error(f"Ollama local call failed: {e}")
+
+        # 3. Google Gemini Provider
+        if active_provider in ("gemini", "google", "auto") and self.config.has_valid_google_key:
             try:
                 import google.generativeai as genai
                 genai.configure(api_key=self.config.GOOGLE_API_KEY)
-                model = genai.GenerativeModel(model_name)
-                full_prompt = f"{system_instruction}\n\n{prompt}" if system_instruction else prompt
+                gem_model = model_name or self.config.GEMINI_FLASH_MODEL
+                model = genai.GenerativeModel(gem_model)
                 response = model.generate_content(full_prompt)
                 if response and response.text:
                     return response.text
             except Exception as e:
-                self.log_error(f"Google Gemini call failed: {e}. Falling back to deterministic agent handler.")
+                self.log_error(f"Google Gemini call failed: {e}")
 
+        # 4. OpenAI Provider
+        if (active_provider == "openai" or (active_provider == "auto" and self.config.has_valid_openai_key)) and self.config.has_valid_openai_key:
+            try:
+                import urllib.request
+                headers = {
+                    "Authorization": f"Bearer {self.config.OPENAI_API_KEY}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": model_name or self.config.OPENAI_MODEL,
+                    "messages": [
+                        *([{"role": "system", "content": system_instruction}] if system_instruction else []),
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.2
+                }
+                req = urllib.request.Request(
+                    "https://api.openai.com/v1/chat/completions",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers=headers
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    text = data["choices"][0]["message"]["content"]
+                    if text:
+                        return text
+            except Exception as e:
+                self.log_error(f"OpenAI call failed: {e}")
+
+        # 5. Anthropic Claude Provider
+        if (active_provider == "anthropic" or (active_provider == "auto" and self.config.has_valid_anthropic_key)) and self.config.has_valid_anthropic_key:
+            try:
+                import urllib.request
+                headers = {
+                    "x-api-key": self.config.ANTHROPIC_API_KEY,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "model": model_name or self.config.ANTHROPIC_MODEL,
+                    "max_tokens": 4096,
+                    "messages": [{"role": "user", "content": full_prompt}],
+                    "temperature": 0.2
+                }
+                req = urllib.request.Request(
+                    "https://api.anthropic.com/v1/messages",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers=headers
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    text = "".join(b.get("text", "") for b in data.get("content", []))
+                    if text:
+                        return text
+            except Exception as e:
+                self.log_error(f"Anthropic call failed: {e}")
+
+        # Fallback to deterministic generator
         if mock_fallback:
             self.log_info("Executing deterministic agent generator")
             return mock_fallback()
 
-        raise RuntimeError(f"No valid API keys available for agent '{self.name}' and no fallback provided.")
+        raise RuntimeError(f"No valid LLM provider succeeded for agent '{self.name}' and no fallback provided.")

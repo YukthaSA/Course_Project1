@@ -42,10 +42,19 @@ _load_env_file()
 class Config:
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+    ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
     
-    GEMINI_FLASH_MODEL = "gemini-2.0-flash"
-    GEMINI_PRO_MODEL = "gemini-1.5-pro"
-    GROQ_MODEL = "llama-3.3-70b-versatile"
+    # Active default provider: "gemini", "groq", "ollama", "openai", "anthropic"
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "auto").lower()
+
+    GEMINI_FLASH_MODEL = os.getenv("GEMINI_FLASH_MODEL", "gemini-2.0-flash")
+    GEMINI_PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-1.5-pro")
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
+    OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+    ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
     
     TARGET_URL = os.getenv("TARGET_URL", "http://127.0.0.1:8080")
     HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
@@ -77,6 +86,24 @@ class Config:
     @property
     def has_valid_groq_key(self) -> bool:
         return bool(self.GROQ_API_KEY and not self.GROQ_API_KEY.startswith("your_"))
+
+    @property
+    def has_valid_openai_key(self) -> bool:
+        return bool(self.OPENAI_API_KEY and not self.OPENAI_API_KEY.startswith("your_"))
+
+    @property
+    def has_valid_anthropic_key(self) -> bool:
+        return bool(self.ANTHROPIC_API_KEY and not self.ANTHROPIC_API_KEY.startswith("your_"))
+
+    @property
+    def is_ollama_available(self) -> bool:
+        try:
+            import urllib.request
+            req = urllib.request.Request(f"{self.OLLAMA_BASE_URL.rstrip('/')}/api/tags", headers={"User-Agent": "AgenticQA"})
+            with urllib.request.urlopen(req, timeout=1.0) as res:
+                return res.status == 200
+        except Exception:
+            return False
 
     def get_pure_catalog(self) -> List[Dict[str, Any]]:
         """Return cached PURE documents catalog or parse dynamically"""

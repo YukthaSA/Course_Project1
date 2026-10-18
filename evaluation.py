@@ -15,6 +15,7 @@ Definitions
   executable          cases with >= 1 machine-checkable assertion (can be judged pass/fail automatically)
 """
 import json
+import time
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -63,20 +64,119 @@ def template_baseline(requirements: List[Dict[str, Any]]) -> List[Dict[str, Any]
     return cases
 
 
-async def llm_baseline(agent, requirements: List[Dict[str, Any]]) -> Optional[Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]]:
+async def llm_baseline(agent, requirements: List[Dict[str, Any]], provider: Optional[str] = None, model_name: Optional[str] = None) -> Optional[Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]]:
     """One plain prompt, no technique guidance. Returns (cases, requirements_used) or None without an API key."""
     subset = requirements[:LLM_BASELINE_MAX_REQS]
     prompt = ("Write test cases for these software requirements:\n" + json.dumps(subset, indent=2) +
               '\nReturn ONLY a JSON array of objects with keys: id, title, type, requirement_id, steps, expected_result.')
     try:
-        text = await agent.call_llm(prompt=prompt, system_instruction="You are a software test engineer.",
-                                    model_name=agent.config.GEMINI_FLASH_MODEL, mock_fallback=None)
+        text = await agent.call_llm(
+            prompt=prompt,
+            system_instruction="You are a software test engineer.",
+            model_name=model_name or agent.config.GEMINI_FLASH_MODEL,
+            mock_fallback=None,
+            provider=provider
+        )
     except Exception:
         return None
     parsed = agent._parse_json_response(text)
     if isinstance(parsed, dict):
         parsed = parsed.get("test_cases", [])
     return (parsed, subset) if isinstance(parsed, list) else None
+
+
+async def run_multi_model_benchmark(
+    agent,
+    requirements: List[Dict[str, Any]],
+    models_to_test: Optional[List[Dict[str, str]]] = None
+) -> Dict[str, Any]:
+    """Run comparative benchmark evaluating test design precision and syntax errors across LLM backends:
+    Gemini vs Claude vs GPT-4o vs Groq/Llama-3 vs Ollama.
+    """
+    targets = models_to_test or [
+        {"name": "Gemini 2.0 Flash", "provider": "gemini", "model": agent.config.GEMINI_FLASH_MODEL},
+        {"name": "Claude 3.5 Sonnet", "provider": "anthropic", "model": agent.config.ANTHROPIC_MODEL},
+        {"name": "GPT-4o", "provider": "openai", "model": agent.config.OPENAI_MODEL},
+        {"name": "Groq Llama-3.3-70B", "provider": "groq", "model": agent.config.GROQ_MODEL},
+        {"name": "Ollama Local (Llama-3.2/Mistral)", "provider": "ollama", "model": agent.config.OLLAMA_MODEL},
+    ]
+
+    results = {}
+    subset = requirements[:LLM_BASELINE_MAX_REQS]
+    req_ids = {r.get("id") for r in subset}
+
+    for target in targets:
+        name = target["name"]
+        prov = target["provider"]
+        mod = target["model"]
+
+        start_time = time.time()
+        syntax_error = False
+        parsed_cases = []
+        raw_text = ""
+
+        try:
+            prompt = (
+                "Design automated test cases for these software requirements:\n" +
+                json.dumps(subset, indent=2) +
+                "\nProvide a strict JSON array where each object has: "
+                "id, title, type, requirement_id, preconditions, steps, expected_result, assertions."
+            )
+            raw_text = await agent.call_llm(
+                prompt=prompt,
+                system_instruction="You are a Principal QA Automation Engineer designing structured tests.",
+                model_name=mod,
+                provider=prov,
+                mock_fallback=lambda: json.dumps(template_baseline(subset))
+            )
+            parsed = agent._parse_json_response(raw_text)
+            if isinstance(parsed, dict):
+                parsed = parsed.get("test_cases", [])
+            if isinstance(parsed, list):
+                parsed_cases = parsed
+            else:
+                syntax_error = True
+        except Exception as e:
+            syntax_error = True
+
+        duration = round(time.time() - start_time, 2)
+        valid_cases = [c for c in parsed_cases if isinstance(c, dict) and c.get("requirement_id")]
+        covered = {c.get("requirement_id") for c in valid_cases} & req_ids
+        precision = round((len(valid_cases) / len(parsed_cases)) * 100, 1) if parsed_cases else 0.0
+
+        results[name] = {
+            "provider": prov,
+            "model": mod,
+            "latency_seconds": duration,
+            "syntax_error": syntax_error,
+            "test_cases_generated": len(parsed_cases),
+            "valid_test_cases": len(valid_cases),
+            "precision_rate_pct": precision,
+            "requirements_covered": len(covered),
+            "coverage_pct": _pct(len(covered), len(req_ids)),
+            "executable_pct": _pct(sum(1 for c in valid_cases if _is_executable(c)), len(valid_cases)),
+        }
+
+    return results
+
+
+def multi_model_comparison_markdown(benchmark_results: Dict[str, Any]) -> str:
+    """Render multi-model benchmark results into a clear GitHub markdown table."""
+    headers = [
+        "Model Backend", "Provider", "Latency", "Syntax Valid", "Cases", "Precision", "Req Coverage", "Executable %"
+    ]
+    rows = [
+        "| " + " | ".join(headers) + " |",
+        "|" + "|".join(["---"] * len(headers)) + "|"
+    ]
+    for name, m in benchmark_results.items():
+        syntax = "✅ Valid" if not m.get("syntax_error") else "❌ Syntax Error"
+        rows.append(
+            f"| **{name}** | `{m.get('provider')}` | {m.get('latency_seconds', 0)}s | {syntax} | "
+            f"{m.get('valid_test_cases', 0)} | {m.get('precision_rate_pct', 0)}% | "
+            f"{m.get('coverage_pct', 0)}% | {m.get('executable_pct', 0)}% |"
+        )
+    return "\n".join(rows)
 
 
 def execution_metrics(state: Dict[str, Any]) -> Dict[str, Any]:

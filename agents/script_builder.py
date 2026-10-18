@@ -43,13 +43,15 @@ MAX_FAIL_SHOTS = 8
 
 TEST_CASES = __TEST_CASES__
 
-EMAIL = "input[name='email'], input#email, input[type='email']"
-PASSWORD = "input[name='password'], input#password, input[type='password']"
+EMAIL = ("input[name='email'], input#email, input[type='email'], input[name='username'], "
+         "input#username, input[placeholder*='user' i], input[placeholder*='email' i], [aria-label*='user' i]")
+PASSWORD = ("input[name='password'], input#password, input[type='password'], "
+            "input[placeholder*='pass' i], [aria-label*='pass' i]")
 TEXT = ("#search-input, input[type='search'], textarea, input[type='number'], "
-        "input[type='text']:not([name='email']):not(#email)")
+        "input[type='text']:not([name='email']):not(#email):not([name='username']):not(#username)")
 FILE_INPUT = "input[type='file']"
-ERROR_SEL = ".alert-danger, .error, .errors, .invalid-feedback, [role='alert'], [class*='error']"
-SUCCESS_RE = re.compile(r"authentication successful|login successful|logged in|welcome back|sign out|log ?out|dashboard", re.I)
+ERROR_SEL = ".alert-danger, .error, .errors, .invalid-feedback, [role='alert'], [class*='error'], .flash.error"
+SUCCESS_RE = re.compile(r"authentication successful|login successful|logged in|welcome back|sign out|log ?out|dashboard|secure area", re.I)
 SERVER_ERR_RE = re.compile(r"internal server error|traceback \(most recent|stack trace|exception in thread|syntax error in sql", re.I)
 MIME = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
         "txt": "text/plain", "csv": "text/csv"}
@@ -63,8 +65,8 @@ async def resolve_target():
     """Return (url, server). Falls back to the built-in demo target if TARGET_URL is unreachable."""
     async with async_playwright() as probe:
         browser = await probe.chromium.launch(headless=True)
-        page = await browser.new_page()
         try:
+            page = await browser.new_page()
             await page.goto(TARGET_URL, timeout=3000, wait_until="domcontentloaded")
             return TARGET_URL, None
         except Exception as err:
@@ -78,35 +80,110 @@ async def resolve_target():
     return f"http://127.0.0.1:{port}", server
 
 
+async def inspect_dom_targets(page):
+    """Autonomous DOM-Grounding: extract interactive elements and accessibility tree attributes."""
+    try:
+        return await page.evaluate("""() => {
+            const items = [];
+            const interactive = document.querySelectorAll('input, button, select, textarea, [role="button"], a');
+            interactive.forEach(el => {
+                const rect = el.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                    items.push({
+                        tag: el.tagName.toLowerCase(),
+                        id: el.id || '',
+                        name: el.name || '',
+                        type: el.type || '',
+                        aria: el.getAttribute('aria-label') || '',
+                        placeholder: el.placeholder || '',
+                        text: (el.innerText || el.value || '').trim().slice(0, 50)
+                    });
+                }
+            });
+            return items;
+        }""")
+    except Exception:
+        return []
+
+
+async def find_grounded_input(page, key, fallback_selector, dom_items):
+    """Self-healing input resolution: prefers exact DOM/ARIA match before falling back."""
+    key_low = str(key).lower()
+    for item in dom_items:
+        if item["tag"] not in ("input", "textarea"):
+            continue
+        # Self-heal match by id, name, placeholder, or aria
+        if (item["id"] and key_low in item["id"].lower()) or \
+           (item["name"] and key_low in item["name"].lower()) or \
+           (item["aria"] and key_low in item["aria"].lower()) or \
+           (item["placeholder"] and key_low in item["placeholder"].lower()):
+            sel = f"#{item['id']}" if item["id"] else f"input[name='{item['name']}']"
+            loc = page.locator(sel).first
+            if await loc.count() > 0 and await loc.is_visible():
+                return loc
+
+    # Primary selector fallback
+    loc = page.locator(fallback_selector).first
+    if await loc.count() > 0:
+        return loc
+    return None
+
+
 async def fill_fields(page, data):
-    """Fill every known field in test_data; return the first filled locator."""
+    """Fill every known field in test_data with DOM-grounded, self-healing locators."""
+    dom_items = await inspect_dom_targets(page)
     first, missing = None, []
-    for key, selector in (("email", EMAIL), ("password", PASSWORD), ("value", TEXT)):
+    
+    key_map = [
+        ("email", EMAIL),
+        ("password", PASSWORD),
+        ("value", TEXT),
+        ("username", EMAIL),
+    ]
+
+    for key, selector in key_map:
         if key not in data:
             continue
-        field = page.locator(selector).first
-        if await field.count() == 0:
+        field = await find_grounded_input(page, key, selector, dom_items)
+        if field is None:
             missing.append(key)
             continue
         await field.fill(str(data[key]))
         first = first or field
+
     if missing and first is None:
         raise Skip(f"No input field found on the page for: {', '.join(missing)}")
     return first
 
 
 async def click_submit(page, field, rec):
-    """Click the submit control belonging to the field's form (or the button next to it)."""
+    """Click the submit control belonging to the field's form, or self-heal to visible buttons."""
     rec["form"] = None
+    button = None
     if field is not None:
         form = field.locator("xpath=ancestor::form[1]")
         if await form.count():
             rec["form"] = form
-            button = form.locator("button[type='submit'], input[type='submit'], button").first
+            button = form.locator("button[type='submit'], input[type='submit'], button, [role='button']").first
         else:
             button = field.locator("xpath=following::button[1]")
-    else:
-        button = page.locator("button[type='submit'], #login-btn, form button, button").first
+
+    if button is None or await button.count() == 0:
+        dom_items = await inspect_dom_targets(page)
+        # Self-healing search for submit / login action buttons
+        for item in dom_items:
+            if item["tag"] in ("button", "input") or "button" in item.get("type", ""):
+                txt = (item["text"] + " " + item["id"] + " " + item["name"]).lower()
+                if any(w in txt for w in ["login", "submit", "sign", "continue", "enter", "auth"]):
+                    sel = f"#{item['id']}" if item["id"] else f"button:has-text('{item['text']}')"
+                    b_loc = page.locator(sel).first
+                    if await b_loc.count() > 0:
+                        button = b_loc
+                        break
+
+    if button is None or await button.count() == 0:
+        button = page.locator("button[type='submit'], #login-btn, #submit, button.radius, form button, button").first
+
     if await button.count() == 0:
         raise Skip("No submit button found on the page")
     await button.click()
