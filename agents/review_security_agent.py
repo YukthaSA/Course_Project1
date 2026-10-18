@@ -133,12 +133,7 @@ Return ONLY valid JSON object:"""
 
             # Enforce coverage rules against approvals
             rule_review = self._review_test_cases(tcs, state)
-            rule_approved_ids = set(rule_review["approved_ids"])
-
-            if "approved_ids" in rev_data and isinstance(rev_data["approved_ids"], list):
-                approved_ids = set(rev_data["approved_ids"]) & rule_approved_ids
-            else:
-                approved_ids = rule_approved_ids
+            approved_ids = set(rule_review["approved_ids"])
 
             approved_tcs = [tc for tc in tcs if tc.get("id") in approved_ids]
             compliance_score = round((len(approved_tcs) / len(tcs)) * 100, 1) if tcs else 0.0

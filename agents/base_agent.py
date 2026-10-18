@@ -107,10 +107,11 @@ class BaseAgent(ABC):
         if active_provider == "groq" or (active_provider == "auto" and self.config.has_valid_groq_key):
             try:
                 import urllib.request
-                groq_model = model_name or self.config.GROQ_MODEL
+                groq_model = model_name if (model_name and "gemini" not in model_name) else self.config.GROQ_MODEL
                 headers = {
                     "Authorization": f"Bearer {self.config.GROQ_API_KEY}",
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
+                    "User-Agent": "CourseProject1/1.0"
                 }
                 payload = {
                     "model": groq_model,
@@ -125,7 +126,7 @@ class BaseAgent(ABC):
                     data=json.dumps(payload).encode("utf-8"),
                     headers=headers
                 )
-                with urllib.request.urlopen(req, timeout=10) as resp:
+                with urllib.request.urlopen(req, timeout=15) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     text = data["choices"][0]["message"]["content"]
                     if text:
@@ -134,10 +135,10 @@ class BaseAgent(ABC):
                 self.log_error(f"Groq API call failed: {e}")
 
         # 2. Ollama Local Provider (via OpenAI-compatible endpoint)
-        if active_provider == "ollama" or (active_provider == "auto" and not self.config.has_valid_google_key and self.config.is_ollama_available):
+        if active_provider == "ollama" or (active_provider == "auto" and not self.config.has_valid_groq_key and not self.config.has_valid_google_key and self.config.is_ollama_available):
             try:
                 import urllib.request
-                ollama_model = model_name or self.config.OLLAMA_MODEL
+                ollama_model = model_name if (model_name and "gemini" not in model_name) else self.config.OLLAMA_MODEL
                 url = f"{self.config.OLLAMA_BASE_URL.rstrip('/')}/v1/chat/completions"
                 payload = {
                     "model": ollama_model,
@@ -152,7 +153,7 @@ class BaseAgent(ABC):
                     data=json.dumps(payload).encode("utf-8"),
                     headers={"Content-Type": "application/json"}
                 )
-                with urllib.request.urlopen(req, timeout=8) as resp:
+                with urllib.request.urlopen(req, timeout=20) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     text = data["choices"][0]["message"]["content"]
                     if text:
@@ -161,15 +162,26 @@ class BaseAgent(ABC):
                 self.log_error(f"Ollama local call failed: {e}")
 
         # 3. Google Gemini Provider
-        if active_provider in ("gemini", "google", "auto") and self.config.has_valid_google_key:
+        if active_provider in ("gemini", "google") or (active_provider == "auto" and self.config.has_valid_google_key):
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=self.config.GOOGLE_API_KEY)
-                gem_model = model_name or self.config.GEMINI_FLASH_MODEL
-                model = genai.GenerativeModel(gem_model)
-                response = model.generate_content(full_prompt)
-                if response and response.text:
-                    return response.text
+                import urllib.request
+                gem_model = model_name if (model_name and "gemini" in model_name) else self.config.GEMINI_FLASH_MODEL
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_model}:generateContent?key={self.config.GOOGLE_API_KEY}"
+                payload = {
+                    "contents": [{
+                        "parts": [{"text": full_prompt}]
+                    }]
+                }
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={"Content-Type": "application/json"}
+                )
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    text = data["candidates"][0]["content"]["parts"][0]["text"]
+                    if text:
+                        return text
             except Exception as e:
                 self.log_error(f"Google Gemini call failed: {e}")
 

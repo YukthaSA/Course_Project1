@@ -139,17 +139,39 @@ with st.sidebar:
 
     st.divider()
 
-    st.subheader("API Status")
-    google_status = "🟢 Active" if config.has_valid_google_key else "🟡 Deterministic Mode"
-    groq_status = "🟢 Active" if config.has_valid_groq_key else "🟡 Deterministic Mode"
-    st.write(f"**Google Gemini:** {google_status}")
-    st.write(f"**Groq API:** {groq_status}")
+    st.subheader("LLM Provider & Runtime")
+    provider_choice = st.selectbox(
+        "Active LLM Engine",
+        options=["auto", "ollama", "groq", "gemini", "openai"],
+        format_func=lambda x: {
+            "auto": "⚡ Auto-Select (Smart Fallback)",
+            "ollama": "🦙 Ollama Local (Offline / Free)",
+            "groq": "⚡ Groq Cloud (Llama-3.3-70B)",
+            "gemini": "✨ Google Gemini (2.0 Flash)",
+            "openai": "🧠 OpenAI (GPT-4o)",
+        }.get(x, x),
+        index=0
+    )
+    config.LLM_PROVIDER = provider_choice
+
+    if provider_choice == "ollama":
+        ollama_models = ["llama3.2:3b", "qwen2.5:3b", "mistral:7b", "phi4-mini:latest", "gemma2:2b"]
+        config.OLLAMA_MODEL = st.selectbox("Local Ollama Model", options=ollama_models, index=0)
+
+    st.caption("**Active Engines Detected:**")
+    col_a1, col_a2 = st.columns(2)
+    with col_a1:
+        st.write(f"🦙 **Ollama:** {'🟢 Ready' if config.is_ollama_available else '🔴 Offline'}")
+        st.write(f"🧠 **OpenAI:** {'🟢 Ready' if config.has_valid_openai_key else '⚪ None'}")
+    with col_a2:
+        st.write(f"⚡ **Groq:** {'🟢 Ready' if config.has_valid_groq_key else '⚪ None'}")
+        st.write(f"✨ **Gemini:** {'🟢 Ready' if config.has_valid_google_key else '⚪ None'}")
 
     st.divider()
     st.subheader("Target Settings")
-    target_url = st.text_input("Target URL", value=config.TARGET_URL)
+    target_url = st.text_input("Target URL (Live Website or App)", value=config.TARGET_URL, help="Enter your live app URL or external site (e.g., https://the-internet.herokuapp.com/login)")
     headless_mode = st.checkbox("Headless Browser", value=config.HEADLESS)
-    max_retries = st.slider("Max Retries", min_value=1, max_value=4, value=config.MAX_RETRIES)
+    max_retries = st.slider("Max Self-Healing Retries", min_value=1, max_value=4, value=config.MAX_RETRIES)
 
 # ==============================================================================
 # MAIN PAGE HEADER & SRS INPUT
