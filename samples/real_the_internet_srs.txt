@@ -1,0 +1,24 @@
+===================================================================
+SYSTEM REQUIREMENT SPECIFICATION (SRS) - SECURE AUTHENTICATION PORTAL
+TARGET URL: https://the-internet.herokuapp.com/login
+===================================================================
+
+1. USER AUTHENTICATION & LOGIN FORM
+   REQ-001: Form Controls Display
+   The portal shall present a login form containing a Username input field (#username), 
+   a Password input field (#password), and a Submit button with type "submit".
+
+   REQ-002: Authorized Access
+   The system shall authenticate the user when valid credentials (username: "tomsmith", 
+   password: "SuperSecretPassword!") are supplied, and redirect to the secure dashboard (/secure).
+
+   REQ-003: Success Notification
+   Upon successful login, the system shall render a flash banner indicating "You logged into a secure area!".
+
+   REQ-004: Invalid Credentials Prevention
+   When incorrect credentials are submitted, the portal shall deny access and display a 
+   prominent flash error banner stating "Your username is invalid!".
+
+2. SECURITY & SESSION MANAGEMENT
+   REQ-005: Logout Capability
+   The secure area shall provide a Logout button allowing the authenticated user to terminate the session.

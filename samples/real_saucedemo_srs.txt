@@ -1,0 +1,31 @@
+===================================================================
+SYSTEM REQUIREMENT SPECIFICATION (SRS) - SAUCEDEMO STOREFRONT
+TARGET URL: https://www.saucedemo.com
+===================================================================
+
+1. USER AUTHENTICATION & ACCESS CONTROL
+   REQ-001: Standard User Login
+   The system shall authenticate users with username "standard_user" and password "secret_sauce".
+   Upon valid authentication, the user shall be directed to the inventory catalog (/inventory.html).
+
+   REQ-002: Authentication Failure & Error Handling
+   The system shall display an error container ("Epic sadface: Username and password do not match any user in this service")
+   when incorrect credentials or unknown usernames are submitted.
+
+   REQ-003: Locked Out User Restriction
+   If the user "locked_out_user" attempts login, the system shall display "Epic sadface: Sorry, this user has been locked out.".
+
+2. INVENTORY & PRODUCT DISCOVERY
+   REQ-004: Product Inventory Display
+   The storefront shall render product items with title, description, price, and an "Add to cart" button.
+
+   REQ-005: Product Filtering & Sorting
+   The system shall provide a sort dropdown allowing products to be sorted by Name (A to Z), Name (Z to A),
+   Price (low to high), and Price (high to low).
+
+3. SHOPPING CART & CHECKOUT TRANSACTION
+   REQ-006: Add to Cart & Cart Counter
+   When a user clicks "Add to cart" on an inventory item, the cart badge in the header shall increment to reflect the count.
+
+   REQ-007: Cart Review & Checkout Navigation
+   The user shall be able to click the shopping cart icon to view selected items and initiate checkout by clicking "Checkout".
