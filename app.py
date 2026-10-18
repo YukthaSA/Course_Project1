@@ -121,7 +121,7 @@ with st.sidebar:
                 st.session_state.srs_text = doc_content
                 st.session_state.selected_doc_id = selected_doc_key
                 st.session_state.state = None
-                st.success(f"Loaded '{selected_doc_meta['title']}'! Click '🚀 Run Agent Pipeline' below to begin.")
+                st.success(f"Loaded '{selected_doc_meta['title']}'.")
                 st.rerun()
 
     st.divider()
@@ -172,19 +172,19 @@ with col_srs:
         "SRS Specification Document",
         value=st.session_state.srs_text,
         height=140,
-        placeholder="Type or paste software requirements (SRS) here, or select an SRS document from the sidebar and click '📥 Load Document into Pipeline'...",
+        placeholder="Enter or paste SRS requirements here, or select a document from the sidebar and click 'Load Document into Pipeline'...",
         help="Paste custom specification text or select any of the 18 PURE dataset documents from the sidebar."
     )
 
 with col_btn1:
     st.write("")
     st.write("")
-    run_btn = st.button("🚀 Run Agent Pipeline", type="primary", use_container_width=True)
+    run_btn = st.button("Run Pipeline", type="primary", use_container_width=True)
 
 with col_btn2:
     st.write("")
     st.write("")
-    if st.button("🧹 Clear", use_container_width=True, help="Reset the SRS input and clear the canvas"):
+    if st.button("Clear", use_container_width=True, help="Reset input and clear results"):
         st.session_state.srs_text = ""
         st.session_state.state = None
         st.rerun()
@@ -194,7 +194,7 @@ with col_btn2:
 # ==============================================================================
 if run_btn:
     if not st.session_state.srs_text or not st.session_state.srs_text.strip():
-        st.warning("⚠️ Please enter SRS requirements in the text box above, or choose a document from the sidebar and click '📥 Load Document into Pipeline' before running.")
+        st.warning("Please enter or load SRS requirements before running.")
     else:
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -688,20 +688,4 @@ if state:
             st.info("Run the pipeline to generate traceability data linking requirements to test execution results.")
 
 else:
-    st.markdown("""
-    <div style="background: rgba(255, 255, 255, 0.02); border: 1px dashed rgba(128, 128, 128, 0.25); border-radius: 12px; padding: 2.5rem; text-align: center; margin-top: 1rem;">
-        <h3 style="margin-bottom: 0.5rem; font-weight: 600;">✨ Clean Canvas — Ready to Execute</h3>
-        <p style="color: #888; font-size: 0.95rem; max-width: 650px; margin: 0 auto 1.5rem auto;">
-            Load any specification from the <b>PURE Dataset Explorer</b> in the sidebar or paste requirements into the box above, then click <b>'🚀 Run Agent Pipeline'</b> to trigger the 7-stage autonomous agent workflow.
-        </p>
-        <div style="display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap;">
-            <span style="background: rgba(46, 125, 50, 0.12); border: 1px solid rgba(46, 125, 50, 0.3); color: #81c784; padding: 0.35rem 0.85rem; border-radius: 20px; font-size: 0.82rem;">1️⃣ Doc Ingestion</span>
-            <span style="background: rgba(2, 136, 209, 0.12); border: 1px solid rgba(2, 136, 209, 0.3); color: #4fc3f7; padding: 0.35rem 0.85rem; border-radius: 20px; font-size: 0.82rem;">2️⃣ Extraction</span>
-            <span style="background: rgba(245, 124, 0, 0.12); border: 1px solid rgba(245, 124, 0, 0.3); color: #ffb74d; padding: 0.35rem 0.85rem; border-radius: 20px; font-size: 0.82rem;">3️⃣ Validation</span>
-            <span style="background: rgba(211, 47, 47, 0.12); border: 1px solid rgba(211, 47, 47, 0.3); color: #e57373; padding: 0.35rem 0.85rem; border-radius: 20px; font-size: 0.82rem;">4️⃣ 2D Risk Planning</span>
-            <span style="background: rgba(123, 31, 162, 0.12); border: 1px solid rgba(123, 31, 162, 0.3); color: #ba68c8; padding: 0.35rem 0.85rem; border-radius: 20px; font-size: 0.82rem;">5️⃣ Test Design</span>
-            <span style="background: rgba(0, 150, 136, 0.12); border: 1px solid rgba(0, 150, 136, 0.3); color: #4db6ac; padding: 0.35rem 0.85rem; border-radius: 20px; font-size: 0.82rem;">6️⃣ OWASP Audit</span>
-            <span style="background: rgba(56, 142, 60, 0.12); border: 1px solid rgba(56, 142, 60, 0.3); color: #a5d6a7; padding: 0.35rem 0.85rem; border-radius: 20px; font-size: 0.82rem;">7️⃣ Playwright Execution</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.info("Enter or load an SRS document and click 'Run Pipeline' to execute.")
