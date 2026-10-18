@@ -589,10 +589,55 @@ if state:
             fig_donut.update_layout(height=320)
             st.plotly_chart(fig_donut, use_container_width=True)
 
-        # Display execution screenshot if generated
-        screenshot_path = os.path.join(config.LOGS_DIR, "execution_result.png")
-        if os.path.exists(screenshot_path):
-            st.image(screenshot_path, caption="📸 Playwright Execution Screenshot Proof", use_container_width=True)
+        # Display execution screenshots for all executed test cases
+        st.markdown("#### 📸 Test Case Execution Evidence & Visual Proof")
+        t_results = state.get("test_results") or []
+        screenshots_rendered = 0
+
+        if t_results:
+            cols = st.columns(2)
+            for idx, tr in enumerate(t_results):
+                col = cols[idx % 2]
+                with col:
+                    tc_id = tr.get("test_case_id", f"TC-{idx+1:03d}")
+                    tc_status = tr.get("status", "UNKNOWN")
+                    tc_title = tr.get("title", "Test Case")
+                    tc_dur = tr.get("duration", 0)
+                    tc_err = tr.get("error")
+
+                    status_icon = "🟢" if tc_status == "PASSED" else ("🔴" if tc_status == "FAILED" else "⚪")
+
+                    with st.container(border=True):
+                        st.markdown(f"**{status_icon} {tc_id}: {tc_title}**")
+                        st.caption(f"Status: `{tc_status}` | Duration: {tc_dur}s")
+                        if tc_err:
+                            st.warning(f"Failure Detail: {tc_err}")
+
+                        # Check for matching screenshots
+                        candidate_files = [
+                            tr.get("screenshot"),
+                            f"{tc_id}_{tc_status.lower()}.png",
+                            f"fail_{tc_id}.png"
+                        ]
+                        shot_found = False
+                        for c_file in candidate_files:
+                            if c_file:
+                                full_p = os.path.join(config.LOGS_DIR, os.path.basename(c_file))
+                                if os.path.exists(full_p):
+                                    st.image(full_p, caption=f"Proof: {tc_id} ({tc_status})", use_container_width=True)
+                                    shot_found = True
+                                    screenshots_rendered += 1
+                                    break
+                        if not shot_found:
+                            st.caption("No screenshot captured for this test case.")
+
+        # Fallback if no per-test screenshots were rendered
+        if screenshots_rendered == 0:
+            screenshot_path = os.path.join(config.LOGS_DIR, "execution_result.png")
+            if os.path.exists(screenshot_path):
+                st.image(screenshot_path, caption="📸 Playwright Execution Screenshot Proof", use_container_width=True)
+            else:
+                st.info("No execution screenshots captured yet.")
 
         if exec_res.get("stdout"):
             with st.expander("Console Output (stdout)", expanded=True):

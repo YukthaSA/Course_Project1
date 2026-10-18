@@ -309,6 +309,15 @@ async def run_case(context, base_url, tc, shots):
     except Exception as err:
         result.update(status="FAILED", error=f"{type(err).__name__}: {str(err).splitlines()[0]}")
     result["duration"] = round(time.time() - start, 2)
+    # Capture screenshot proof for every executed test case (Passed & Failed)
+    shot_filename = f"{tc['id']}_{result['status'].lower()}.png"
+    shot_path = os.path.join("logs", shot_filename)
+    try:
+        await page.screenshot(path=shot_path)
+        result["screenshot"] = shot_filename
+    except Exception:
+        result["screenshot"] = None
+
     if result["status"] == "FAILED" and shots["n"] < MAX_FAIL_SHOTS:
         shots["n"] += 1
         try:

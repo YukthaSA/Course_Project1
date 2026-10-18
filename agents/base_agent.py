@@ -50,6 +50,9 @@ class BaseAgent(ABC):
         if not response_text:
             return None
 
+        # Strip reasoning model thinking tags (<think>...</think>)
+        response_text = re.sub(r"<think>[\s\S]*?</think>", "", response_text).strip()
+
         # 1. Direct JSON parse
         try:
             return json.loads(response_text.strip())
@@ -146,14 +149,21 @@ class BaseAgent(ABC):
                         *([{"role": "system", "content": system_instruction}] if system_instruction else []),
                         {"role": "user", "content": prompt}
                     ],
-                    "temperature": 0.2
+                    "temperature": 0.2,
+                    "max_tokens": 512,
+                    "options": {
+                        "num_predict": 512,
+                        "temperature": 0.2,
+                        "num_ctx": 2048
+                    }
                 }
                 req = urllib.request.Request(
                     url,
                     data=json.dumps(payload).encode("utf-8"),
                     headers={"Content-Type": "application/json"}
                 )
-                with urllib.request.urlopen(req, timeout=20) as resp:
+                ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "40"))
+                with urllib.request.urlopen(req, timeout=ollama_timeout) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                     text = data["choices"][0]["message"]["content"]
                     if text:
@@ -245,6 +255,31 @@ class BaseAgent(ABC):
         # Fallback to deterministic generator
         if mock_fallback:
             self.log_info("Executing deterministic agent generator")
-            return mock_fallback()
+            try:
+                return mock_fallback()
+            except Exception as e:
+                self.log_error(f"Deterministic generator failed: {e}")
 
-        raise RuntimeError(f"No valid LLM provider succeeded for agent '{self.name}' and no fallback provided.")
+        # Cloud safety net if local provider timed out or had connection drop
+        if self.config.has_valid_groq_key:
+            try:
+                import urllib.request
+                headers = {"Authorization": f"Bearer {self.config.GROQ_API_KEY}", "Content-Type": "application/json"}
+                payload = {
+                    "model": self.config.GROQ_MODEL,
+                    "messages": [
+                        *([{"role": "system", "content": system_instruction}] if system_instruction else []),
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.2
+                }
+                req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions", data=json.dumps(payload).encode("utf-8"), headers=headers)
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    text = data["choices"][0]["message"]["content"]
+                    if text:
+                        return text
+            except Exception:
+                pass
+
+        return "{}"
