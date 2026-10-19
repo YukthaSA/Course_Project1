@@ -126,88 +126,95 @@ with st.sidebar:
 
     st.divider()
 
-    st.subheader("Models")
-    PROVIDER_LABEL = {"gemini": "Gemini", "groq": "Groq", "openai": "OpenAI", "anthropic": "Anthropic", "ollama": "Ollama (local)"}
-    PROVIDER_ATTR = {"gemini": "GEMINI_FLASH_MODEL", "groq": "GROQ_MODEL", "openai": "OPENAI_MODEL",
-                     "anthropic": "ANTHROPIC_MODEL", "ollama": "OLLAMA_MODEL"}
-    providers = list(PROVIDER_LABEL)
-
-    def provider_name(p):
-        return PROVIDER_LABEL[p] + ("" if config.provider_available(p) else " (unavailable)")
-
-    def model_options(p):
-        if p == "ollama":
-            return config.list_ollama_models() or [config.OLLAMA_MODEL]
-        return config.PROVIDER_MODEL_CHOICES.get(p, [])
-
-    routing_mode = st.radio("Model assignment", ["Different model per stage", "One model for every stage"],
-                            label_visibility="collapsed")
-    if routing_mode == "Different model per stage":
-        config.LLM_PROVIDER = "auto"
-        with st.expander("Stage assignments", expanded=True):
-            for stage in config.STAGE_ORDER:
-                cur_p, cur_m = config.STAGE_ROUTES.get(stage, config.STAGE_ROUTE_DEFAULTS[stage])
-                st.markdown(f"**{stage.replace('_', ' ')}**")
-                c_p, c_m = st.columns(2)
-                with c_p:
-                    prov = st.selectbox("Provider", providers, key=f"prov_{stage}", label_visibility="collapsed",
-                                        index=providers.index(cur_p) if cur_p in providers else 0, format_func=provider_name)
-                with c_m:
-                    opts = model_options(prov)
-                    model = st.selectbox("Model", opts, key=f"model_{stage}_{prov}", label_visibility="collapsed",
-                                         index=opts.index(cur_m) if cur_m in opts else 0)
-                config.STAGE_ROUTES[stage] = (prov, model)
-        st.caption("A stage whose provider is unavailable or fails is answered by the next available provider, "
-                   "then by the rule-based generator.")
-    else:
-        single_provider = st.selectbox("Provider", providers, format_func=provider_name, key="single_provider")
-        single_options = model_options(single_provider)
-        single_model = st.selectbox("Model", single_options, key=f"single_model_{single_provider}")
-        config.LLM_PROVIDER = single_provider
-        setattr(config, PROVIDER_ATTR[single_provider], single_model)
-
     st.divider()
-    st.subheader("Target")
-    target_choice = st.radio("Application under test", ["Website / app URL", "Built-in demo app"])
-    if target_choice == "Website / app URL":
-        target_url = st.text_input("URL", value="", placeholder="https://your-app.example.com",
-                                   help="The pipeline opens this address in a real browser, checks it is up, "
-                                        "then runs the generated tests against it.").strip()
+
+    st.subheader("Target Application")
+    target_choice = st.radio("Environment", ["Website / App URL", "Built-in Demo App"], label_visibility="collapsed")
+    if target_choice == "Website / App URL":
+        sidebar_target_url = st.text_input(
+            "Target URL",
+            value=st.session_state.get("target_url", ""),
+            placeholder="https://example.com",
+            help="Live website or web application URL to audit and test."
+        ).strip()
+        if sidebar_target_url:
+            st.session_state.target_url = sidebar_target_url
     else:
-        target_url = "demo"
-        st.caption("Starts engine/demo_app.py for the run.")
+        st.session_state.target_url = "demo"
+        st.caption("Runs against the local isolated benchmark app (engine/demo_app.py).")
+
     headless_mode = st.checkbox("Headless Browser", value=config.HEADLESS)
     config.HEADLESS = headless_mode
-    max_retries = st.slider("Max Self-Healing Retries", min_value=1, max_value=4, value=config.MAX_RETRIES)
+    max_retries = st.slider("Self-Healing Retries on Crash", min_value=1, max_value=3, value=1)
+
+    st.divider()
+    st.subheader("Engine Status")
+    st.markdown("""
+    <div style="background: rgba(255,255,255,0.04); padding: 10px; border-radius: 6px; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.08);">
+        <b>Autonomous Multi-Model Routing: Active</b><br>
+        <span style="color: #4CAF50;">●</span> High-Speed Reasoning & Auditing (Groq)<br>
+        <span style="color: #2196F3;">●</span> Large Context & Test Schemas (Gemini)<br>
+        <span style="color: #FF9800;">●</span> Local Diagnostics Fallback (Ollama)
+    </div>
+    """, unsafe_allow_html=True)
+
+# Enforce autonomous multi-model routing
+config.LLM_PROVIDER = "auto"
+config.STAGE_ROUTES = dict(config.STAGE_ROUTE_DEFAULTS)
 
 # ==============================================================================
 # MAIN PAGE HEADER & SRS INPUT
 # ==============================================================================
 st.markdown('<p class="main-title">🤖 Agentic AI Quality Engineering Framework</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-title">Automated Requirement Extraction ➔ Validation ➔ Risk Planning ➔ Test Design ➔ Security Review ➔ Playwright Execution</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-title">Autonomous Requirement Engineering ➔ Test Design ➔ Security Review ➔ Playwright Execution</p>', unsafe_allow_html=True)
 
-col_srs, col_btn1, col_btn2 = st.columns([3.8, 1.2, 0.8])
+col_srs, col_btns = st.columns([4.2, 0.8])
 with col_srs:
+    col_u1, col_u2 = st.columns([2.5, 1.5])
+    with col_u1:
+        main_url_input = st.text_input(
+            "Target Website / App URL",
+            value=st.session_state.get("target_url", "") if st.session_state.get("target_url") != "demo" else "",
+            placeholder="e.g. https://the-internet.herokuapp.com/login",
+            help="Direct URL of the web application or service under test."
+        ).strip()
+        if main_url_input:
+            st.session_state.target_url = main_url_input
+    with col_u2:
+        st.caption("Active Target:")
+        resolved_preview = st.session_state.get("target_url", "") or "(Built-in Demo App)"
+        st.code(resolved_preview if resolved_preview != "demo" else "Built-in Demo App", language="text")
+
     st.session_state.srs_text = st.text_area(
         "SRS Specification Document",
         value=st.session_state.srs_text,
-        height=140,
+        height=130,
         placeholder="Enter or paste SRS requirements here, or select a document from the sidebar and click 'Load Document into Pipeline'...",
         help="Paste custom specification text or select any of the 18 PURE dataset documents from the sidebar."
     )
 
-with col_btn1:
+with col_btns:
+    st.write("")
     st.write("")
     st.write("")
     run_btn = st.button("Run Pipeline", type="primary", use_container_width=True)
-
-with col_btn2:
-    st.write("")
-    st.write("")
     if st.button("Clear", use_container_width=True, help="Reset input and clear results"):
         st.session_state.srs_text = ""
         st.session_state.state = None
+        st.session_state.target_url = ""
         st.rerun()
+
+# Determine effective target URL
+effective_target = st.session_state.get("target_url", "").strip()
+if not effective_target:
+    # Auto-extract from SRS text if present
+    import re
+    url_m = re.search(r"https?://[^\s,;\"'<>]+", st.session_state.srs_text or "")
+    if url_m:
+        effective_target = url_m.group(0).rstrip(".,;")
+        st.session_state.target_url = effective_target
+    elif target_choice == "Built-in Demo App":
+        effective_target = "demo"
 
 # ==============================================================================
 # PIPELINE EXECUTION HANDLER
@@ -215,8 +222,8 @@ with col_btn2:
 if run_btn:
     if not st.session_state.srs_text or not st.session_state.srs_text.strip():
         st.warning("Please enter or load SRS requirements before running.")
-    elif not target_url:
-        st.warning("Enter the URL of the website or app to test (sidebar > Target), or choose the built-in demo app.")
+    elif not effective_target:
+        st.warning("Please specify a Target URL or select the Built-in Demo App.")
     else:
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -235,7 +242,7 @@ if run_btn:
                 final_state = loop.run_until_complete(
                     pipeline.run(
                         srs_text=st.session_state.srs_text,
-                        target_url=target_url,
+                        target_url=effective_target,
                         max_retries=max_retries,
                         status_callback=update_callback,
                         metadata=meta

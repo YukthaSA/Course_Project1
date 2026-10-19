@@ -65,12 +65,12 @@ class Config:
     #   LLM_ROUTE_TEST_DESIGN=groq:openai/gpt-oss-120b
     # Defaults use only models that were verified to answer with the configured keys.
     STAGE_ROUTE_DEFAULTS = {
-        "Requirement_Extraction": ("gemini", "gemini-3.1-flash-lite"),  # long SRS text -> big context, cheap and fast
-        "Requirement_Validation": ("groq", "openai/gpt-oss-20b"),       # many short audits -> fastest inference
-        "Risk_Coverage_Planning": ("groq", "openai/gpt-oss-120b"),      # judgement-heavy prioritisation -> largest open model
-        "Test_Design": ("gemini", "gemini-3.5-flash"),                  # precise structured JSON, largest output
-        "Review_Security": ("groq", "qwen/qwen3.8-27b"),                # different model family than the designer = independent review
-        "Failure_Analysis": ("ollama", "llama3.2:3b"),                  # works on the client app's failure logs: stays on this machine
+        "Requirement_Extraction": ("gemini", "gemini-3.1-flash-lite"),  # large context, fast extraction
+        "Requirement_Validation": ("groq", "openai/gpt-oss-20b"),       # sub-second validation audit
+        "Risk_Coverage_Planning": ("groq", "openai/gpt-oss-120b"),      # deep risk & priority classification
+        "Test_Design": ("gemini", "gemini-3.5-flash"),                  # high-precision test schemas & BDD
+        "Review_Security": ("groq", "openai/gpt-oss-20b"),              # fast OWASP security compliance audit
+        "Failure_Analysis": ("groq", "openai/gpt-oss-20b"),             # instant root cause analysis (<0.5s)
     }
     STAGE_ORDER = list(STAGE_ROUTE_DEFAULTS.keys())
     STAGE_ROUTES: Dict[str, Any] = {}

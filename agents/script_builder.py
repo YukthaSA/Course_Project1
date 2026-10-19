@@ -286,13 +286,14 @@ async def check(page, assertion, rec):
 
 
 async def load_page(page, url):
-    """Navigate and wait until the page has actually rendered."""
+    """Navigate and wait until the DOM is interactive without blocking on slow third-party trackers."""
     await page.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
     try:
-        await page.wait_for_load_state("load", timeout=4000)
+        await page.wait_for_load_state("networkidle", timeout=1200)
     except Exception:
         pass
-    await page.wait_for_timeout(SETTLE_MS)
+    if SETTLE_MS > 0:
+        await page.wait_for_timeout(SETTLE_MS)
 
 
 async def run_case(context, base_url, tc):

@@ -3,6 +3,7 @@ Agentic QA Pipeline Orchestration - Connects specialized agents, execution engin
 Enhanced with PURE benchmark dataset support and detailed quality analytics
 """
 import os
+import re
 import json
 import asyncio
 import logging
@@ -107,6 +108,12 @@ class AgenticQAPipeline:
         (engine/demo_app.py) for the duration of the run - it is never used as a silent fallback.
         """
         target_url = (target_url or config.TARGET_URL or "").strip()
+        if not target_url:
+            # Auto-detect URL from SRS text if present
+            url_match = re.search(r"https?://[^\s,;\"'<>]+", srs_text)
+            if url_match:
+                target_url = url_match.group(0).rstrip(".,;")
+
         demo_server = None
         if target_url.lower() in ("", "demo", "builtin"):
             from engine.demo_app import start_demo_server
