@@ -34,6 +34,15 @@ class AgentState(TypedDict, total=False):
     all_scripts: Optional[Dict[str, str]]
     execution_result: Optional[Dict[str, Any]]
 
+    # Live target: health probe (Stage 0), its DOM inventory, and where this run's screenshots live
+    run_dir: Optional[str]
+    target_mode: Optional[str]          # "external" or "demo"
+    target_health: Optional[Dict[str, Any]]
+    target_profile: Optional[Dict[str, Any]]
+
+    # Which LLM was assigned to / answered each pipeline stage
+    llm_trace: Optional[List[Dict[str, Any]]]
+
     # Per-Test-Case Results & Requirement Traceability
     test_results: Optional[List[Dict[str, Any]]]       # individual test outcomes
     traceability: Optional[List[Dict[str, Any]]]        # requirement → test → status mapping

@@ -101,20 +101,69 @@ class AgenticQAPipeline:
         status_callback=None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> AgentState:
-        """Run the complete Agentic QA Pipeline from SRS to Playwright Execution & Retry Loop"""
+        """Run the complete Agentic QA Pipeline from SRS to Playwright Execution & Retry Loop.
+
+        target_url: the real website / app to test. Empty or "demo" starts the built-in demo app
+        (engine/demo_app.py) for the duration of the run - it is never used as a silent fallback.
+        """
+        target_url = (target_url or config.TARGET_URL or "").strip()
+        demo_server = None
+        if target_url.lower() in ("", "demo", "builtin"):
+            from engine.demo_app import start_demo_server
+            demo_server, port = start_demo_server(0)
+            target_url = f"http://127.0.0.1:{port}"
+        elif "://" not in target_url:
+            target_url = "https://" + target_url
+        run_dir = os.path.join(config.LOGS_DIR, "runs", datetime.now().strftime("%Y%m%d_%H%M%S"))
+        os.makedirs(run_dir, exist_ok=True)
+        try:
+            return await self._run(srs_text, target_url, max_retries, status_callback, metadata, run_dir,
+                                   "demo" if demo_server else "external")
+        finally:
+            if demo_server:
+                demo_server.shutdown()
+
+    async def _run(self, srs_text, target_url, max_retries, status_callback, metadata, run_dir, target_mode) -> AgentState:
         logger.info("============================================================")
         logger.info("🚀 STARTING AGENTIC QA PIPELINE EXECUTION")
         if metadata:
             logger.info(f"📄 Document: {metadata.get('title', 'Unknown')} ({metadata.get('domain', 'General')})")
+        logger.info(f"🎯 Target: {target_url} ({target_mode})")
         logger.info("============================================================")
-        
-        target_url = target_url or config.TARGET_URL
+
         state = create_initial_state(srs_text, target_url, metadata)
+        state["run_dir"] = run_dir
+        state["target_mode"] = target_mode
 
         def _update(msg: str, step: int):
             logger.info(f"[{step}/7] {msg}")
             if status_callback:
                 status_callback(msg, step, state)
+
+        # ----------------------------------------------------
+        # Stage 0: Open the real target - is it up, is it healthy, what is on the page?
+        # ----------------------------------------------------
+        _update("Stage 0/7: Opening the target in a real browser and checking its health...", 0)
+        health = await asyncio.to_thread(self.runner.probe_target, target_url, os.path.join(run_dir, "target"), config.HEADLESS)
+        state["target_health"] = health
+        state["target_profile"] = health.get("inventory") or {}
+        if not health.get("reachable"):
+            reason = health.get("error") or "no response"
+            logger.error(f"❌ Target {target_url} is not reachable: {reason}")
+            state["execution_result"] = {"status": "TARGET_UNREACHABLE", "error": f"{target_url} is not reachable: {reason}",
+                                         "stdout": "", "stderr": "", "duration_seconds": 0, "screenshots": []}
+            state["human_review_required"] = True
+            state["human_review_context"] = {"reason": "target_unreachable", "last_error": reason, "total_attempts": 0}
+            state["final_results"] = {
+                "completed_at": datetime.now().isoformat(), "status": "TARGET_UNREACHABLE", "passed": False,
+                "document_title": metadata.get("title") if metadata else "Custom SRS",
+                "domain": metadata.get("domain") if metadata else "General",
+                "total_requirements": 0, "total_test_cases": 0, "approved_test_cases": 0,
+            }
+            self.save_results(state)
+            return state
+        logger.info(f"✅ Target is up: HTTP {health.get('status')}, {health.get('load_ms')} ms, "
+                    f"health score {health.get('score')}/100, {len(state['target_profile'].get('inputs', []))} input field(s) found")
 
         # ----------------------------------------------------
         # Stage 1: Requirement Extraction
@@ -160,7 +209,8 @@ class AgenticQAPipeline:
             current_script = state.get("current_script", "")
 
             # Execute in sandboxed Playwright engine
-            exec_res = self.runner.execute_script(current_script, script_name=f"test_run_v{attempt + 1}.py")
+            exec_res = self.runner.execute_script(current_script, script_name=f"test_run_v{attempt + 1}.py",
+                                                  shot_dir=run_dir)
             state["execution_result"] = exec_res
 
             # Store per-test-case results (empty list if the run crashed, so stale results never linger)
@@ -221,6 +271,8 @@ class AgenticQAPipeline:
             state.get("test_results", [])
         )
 
+        state["llm_trace"] = self._llm_trace()
+
         state["final_results"] = {
             "completed_at": datetime.now().isoformat(),
             "status": "PASSED" if not state.get("human_review_required") else "REQUIRES_HUMAN_REVIEW",
@@ -238,6 +290,34 @@ class AgenticQAPipeline:
         logger.info(f"🏁 PIPELINE RUN COMPLETED. Final Status: {state['final_results']['status']}")
         logger.info("============================================================")
         return state
+
+    def _llm_trace(self):
+        """Per-stage summary of which LLM was assigned and which one actually answered."""
+        agents = [self.req_extractor, self.req_validator, self.risk_planner, self.test_designer,
+                  self.reviewer, self.failure_analyzer]
+        rows = []
+        for agent in agents:
+            calls = agent.call_log
+            if calls:
+                planned = calls[0]["planned"]
+            else:
+                provider, model = config.get_stage_route(agent.name)
+                planned = f"{provider}/{model}"
+            used = {}
+            for c in calls:
+                key = f"{c['provider']}/{c['model']}"
+                used[key] = used.get(key, 0) + 1
+            errors = [e for c in calls for e in c.get("errors", [])]
+            rows.append({
+                "stage": agent.name,
+                "assigned": planned,
+                "answered_by": ", ".join(f"{k} x{n}" for k, n in used.items()) if used else "not needed",
+                "calls": len(calls),
+                "avg_seconds": round(sum(c["seconds"] for c in calls) / len(calls), 1) if calls else 0.0,
+                "fell_back": any(c["fallback"] for c in calls),
+                "first_error": errors[0][:140] if errors else "",
+            })
+        return rows
 
     def save_results(self, state: AgentState):
         """Persist execution run data to data/pipeline_results.json"""

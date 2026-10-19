@@ -126,38 +126,58 @@ with st.sidebar:
 
     st.divider()
 
-    st.subheader("LLM Provider & Runtime")
-    provider_choice = st.selectbox(
-        "Active LLM Engine",
-        options=["auto", "ollama", "groq", "gemini", "openai"],
-        format_func=lambda x: {
-            "auto": "⚡ Auto-Select (Smart Fallback)",
-            "ollama": "🦙 Ollama Local (Offline / Free)",
-            "groq": "⚡ Groq Cloud (Llama-3.3-70B)",
-            "gemini": "✨ Google Gemini (2.0 Flash)",
-            "openai": "🧠 OpenAI (GPT-4o)",
-        }.get(x, x),
-        index=0
-    )
-    config.LLM_PROVIDER = provider_choice
+    st.subheader("Models")
+    PROVIDER_LABEL = {"gemini": "Gemini", "groq": "Groq", "openai": "OpenAI", "anthropic": "Anthropic", "ollama": "Ollama (local)"}
+    PROVIDER_ATTR = {"gemini": "GEMINI_FLASH_MODEL", "groq": "GROQ_MODEL", "openai": "OPENAI_MODEL",
+                     "anthropic": "ANTHROPIC_MODEL", "ollama": "OLLAMA_MODEL"}
+    providers = list(PROVIDER_LABEL)
 
-    if provider_choice == "ollama":
-        ollama_models = ["llama3.2:3b", "qwen2.5:3b", "mistral:7b", "phi4-mini:latest", "gemma2:2b"]
-        config.OLLAMA_MODEL = st.selectbox("Local Ollama Model", options=ollama_models, index=0)
+    def provider_name(p):
+        return PROVIDER_LABEL[p] + ("" if config.provider_available(p) else " (unavailable)")
 
-    st.caption("**Active Engines Detected:**")
-    col_a1, col_a2 = st.columns(2)
-    with col_a1:
-        st.write(f"🦙 **Ollama:** {'🟢 Ready' if config.is_ollama_available else '🔴 Offline'}")
-        st.write(f"🧠 **OpenAI:** {'🟢 Ready' if config.has_valid_openai_key else '⚪ None'}")
-    with col_a2:
-        st.write(f"⚡ **Groq:** {'🟢 Ready' if config.has_valid_groq_key else '⚪ None'}")
-        st.write(f"✨ **Gemini:** {'🟢 Ready' if config.has_valid_google_key else '⚪ None'}")
+    def model_options(p):
+        if p == "ollama":
+            return config.list_ollama_models() or [config.OLLAMA_MODEL]
+        return config.PROVIDER_MODEL_CHOICES.get(p, [])
+
+    routing_mode = st.radio("Model assignment", ["Different model per stage", "One model for every stage"],
+                            label_visibility="collapsed")
+    if routing_mode == "Different model per stage":
+        config.LLM_PROVIDER = "auto"
+        with st.expander("Stage assignments", expanded=True):
+            for stage in config.STAGE_ORDER:
+                cur_p, cur_m = config.STAGE_ROUTES.get(stage, config.STAGE_ROUTE_DEFAULTS[stage])
+                st.markdown(f"**{stage.replace('_', ' ')}**")
+                c_p, c_m = st.columns(2)
+                with c_p:
+                    prov = st.selectbox("Provider", providers, key=f"prov_{stage}", label_visibility="collapsed",
+                                        index=providers.index(cur_p) if cur_p in providers else 0, format_func=provider_name)
+                with c_m:
+                    opts = model_options(prov)
+                    model = st.selectbox("Model", opts, key=f"model_{stage}_{prov}", label_visibility="collapsed",
+                                         index=opts.index(cur_m) if cur_m in opts else 0)
+                config.STAGE_ROUTES[stage] = (prov, model)
+        st.caption("A stage whose provider is unavailable or fails is answered by the next available provider, "
+                   "then by the rule-based generator.")
+    else:
+        single_provider = st.selectbox("Provider", providers, format_func=provider_name, key="single_provider")
+        single_options = model_options(single_provider)
+        single_model = st.selectbox("Model", single_options, key=f"single_model_{single_provider}")
+        config.LLM_PROVIDER = single_provider
+        setattr(config, PROVIDER_ATTR[single_provider], single_model)
 
     st.divider()
-    st.subheader("Target Settings")
-    target_url = st.text_input("Target URL (Live Website or App)", value=config.TARGET_URL, help="Enter your live app URL or external site (e.g., https://the-internet.herokuapp.com/login)")
+    st.subheader("Target")
+    target_choice = st.radio("Application under test", ["Website / app URL", "Built-in demo app"])
+    if target_choice == "Website / app URL":
+        target_url = st.text_input("URL", value="", placeholder="https://your-app.example.com",
+                                   help="The pipeline opens this address in a real browser, checks it is up, "
+                                        "then runs the generated tests against it.").strip()
+    else:
+        target_url = "demo"
+        st.caption("Starts engine/demo_app.py for the run.")
     headless_mode = st.checkbox("Headless Browser", value=config.HEADLESS)
+    config.HEADLESS = headless_mode
     max_retries = st.slider("Max Self-Healing Retries", min_value=1, max_value=4, value=config.MAX_RETRIES)
 
 # ==============================================================================
@@ -195,6 +215,8 @@ with col_btn2:
 if run_btn:
     if not st.session_state.srs_text or not st.session_state.srs_text.strip():
         st.warning("Please enter or load SRS requirements before running.")
+    elif not target_url:
+        st.warning("Enter the URL of the website or app to test (sidebar > Target), or choose the built-in demo app.")
     else:
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -221,7 +243,10 @@ if run_btn:
                 )
                 st.session_state.state = final_state
                 progress_bar.progress(100)
-                status_text.success("✅ Agentic QA Pipeline Execution Completed Successfully!")
+                if final_state.get("final_results", {}).get("status") == "TARGET_UNREACHABLE":
+                    status_text.error("The target could not be reached. See the details below.")
+                else:
+                    status_text.success("Pipeline run finished.")
                 time.sleep(1)
                 st.rerun()
             except Exception as e:
@@ -242,6 +267,13 @@ if state:
     sec_audit = state.get("security_audit", {})
     status_code = state.get("final_results", {}).get("status", "UNKNOWN")
 
+    if exec_res.get("status") == "TARGET_UNREACHABLE":
+        st.error(f"Target not reachable: {state.get('target_url')}")
+        st.write((state.get("target_health") or {}).get("error") or "The server did not respond.")
+        st.caption("No test cases were generated or executed because there is no running application to test. "
+                   "Start the app or correct the URL, then run again.")
+        st.stop()
+
     c1, c2, c3, c4, c5 = st.columns(5)
     with c1:
         st.metric("Requirements", len(reqs), f"{sum(1 for r in val_reqs if r.get('is_valid'))} Valid")
@@ -259,6 +291,19 @@ if state:
         st.metric("Sandbox Run", f"{status_color} {exec_status}", f"Retry #{state.get('retry_count', 0)}")
 
     st.divider()
+
+    llm_trace = state.get("llm_trace") or []
+    if llm_trace:
+        with st.expander("Model used per stage", expanded=False):
+            st.dataframe([{
+                "Stage": r["stage"].replace("_", " "),
+                "Assigned": r["assigned"],
+                "Answered by": r["answered_by"],
+                "Calls": r["calls"],
+                "Avg seconds": r["avg_seconds"],
+                "Fell back": "yes" if r["fell_back"] else "",
+                "Reason": r["first_error"],
+            } for r in llm_trace], use_container_width=True, hide_index=True)
 
     # ==============================================================================
     # MULTI-TAB DETAILED ANALYTICS
@@ -589,55 +634,58 @@ if state:
             fig_donut.update_layout(height=320)
             st.plotly_chart(fig_donut, use_container_width=True)
 
-        # Display execution screenshots for all executed test cases
-        st.markdown("#### 📸 Test Case Execution Evidence & Visual Proof")
+        # ---- Live site health (Stage 0) -------------------------------------------------------
+        health = state.get("target_health") or {}
+        if health.get("reachable"):
+            st.markdown("#### Live site health")
+            st.caption(f"{state.get('target_url')} - "
+                       f"{'built-in demo app' if state.get('target_mode') == 'demo' else 'external site'} - "
+                       f"page title: {health.get('title') or 'none'}")
+            h1, h2, h3 = st.columns(3)
+            h1.metric("Health score", f"{health.get('score', 0)}/100")
+            h2.metric("HTTP status", health.get("status"))
+            h3.metric("Load time", f"{health.get('load_ms')} ms")
+
+            icon = {"PASS": "🟢", "WARN": "🟡", "FAIL": "🔴"}
+            st.dataframe([{"": icon.get(c["status"], ""), "Check": c["name"], "Result": c["status"], "Detail": c["detail"]}
+                          for c in health.get("checks", [])], use_container_width=True, hide_index=True)
+
+            site_shots = [(label, p) for label, p in (health.get("screenshots") or {}).items() if p and os.path.exists(p)]
+            if site_shots:
+                shot_cols = st.columns(len(site_shots))
+                for col, (label, p) in zip(shot_cols, site_shots):
+                    col.image(p, caption={"desktop": "Desktop (1280x720)", "full_page": "Full page",
+                                          "mobile": "Mobile (iPhone 13)"}.get(label, label), use_container_width=True)
+            st.divider()
+
+        # ---- Per-test screenshots from this run -----------------------------------------------
+        st.markdown("#### Test case screenshots")
         t_results = state.get("test_results") or []
-        screenshots_rendered = 0
-
-        if t_results:
-            cols = st.columns(2)
+        if not t_results:
+            st.info("No per-test results were produced in this run.")
+        else:
+            counts_by_status = {s: sum(1 for r in t_results if r.get("status") == s) for s in ("PASSED", "FAILED", "SKIPPED")}
+            st.caption(f"{counts_by_status['PASSED']} passed, {counts_by_status['FAILED']} failed, "
+                       f"{counts_by_status['SKIPPED']} skipped (not applicable to this page, or nothing to assert)")
+            show = st.radio("Show", ["All", "Failed", "Passed", "Skipped"], horizontal=True, key="shot_filter")
+            wanted = {"All": None, "Failed": "FAILED", "Passed": "PASSED", "Skipped": "SKIPPED"}[show]
             for idx, tr in enumerate(t_results):
-                col = cols[idx % 2]
-                with col:
-                    tc_id = tr.get("test_case_id", f"TC-{idx+1:03d}")
-                    tc_status = tr.get("status", "UNKNOWN")
-                    tc_title = tr.get("title", "Test Case")
-                    tc_dur = tr.get("duration", 0)
-                    tc_err = tr.get("error")
-
-                    status_icon = "🟢" if tc_status == "PASSED" else ("🔴" if tc_status == "FAILED" else "⚪")
-
-                    with st.container(border=True):
-                        st.markdown(f"**{status_icon} {tc_id}: {tc_title}**")
-                        st.caption(f"Status: `{tc_status}` | Duration: {tc_dur}s")
-                        if tc_err:
-                            st.warning(f"Failure Detail: {tc_err}")
-
-                        # Check for matching screenshots
-                        candidate_files = [
-                            tr.get("screenshot"),
-                            f"{tc_id}_{tc_status.lower()}.png",
-                            f"fail_{tc_id}.png"
-                        ]
-                        shot_found = False
-                        for c_file in candidate_files:
-                            if c_file:
-                                full_p = os.path.join(config.LOGS_DIR, os.path.basename(c_file))
-                                if os.path.exists(full_p):
-                                    st.image(full_p, caption=f"Proof: {tc_id} ({tc_status})", use_container_width=True)
-                                    shot_found = True
-                                    screenshots_rendered += 1
-                                    break
-                        if not shot_found:
-                            st.caption("No screenshot captured for this test case.")
-
-        # Fallback if no per-test screenshots were rendered
-        if screenshots_rendered == 0:
-            screenshot_path = os.path.join(config.LOGS_DIR, "execution_result.png")
-            if os.path.exists(screenshot_path):
-                st.image(screenshot_path, caption="📸 Playwright Execution Screenshot Proof", use_container_width=True)
-            else:
-                st.info("No execution screenshots captured yet.")
+                if wanted and tr.get("status") != wanted:
+                    continue
+                tc_id = tr.get("test_case_id", f"TC-{idx + 1:03d}")
+                tc_status = tr.get("status", "UNKNOWN")
+                mark = {"PASSED": "🟢", "FAILED": "🔴", "SKIPPED": "⚪"}.get(tc_status, "⚪")
+                with st.expander(f"{mark} {tc_id}  {tr.get('title', '')}  ({tc_status}, {tr.get('duration', 0)}s)",
+                                 expanded=(tc_status == "FAILED" and idx < 3)):
+                    if tr.get("error"):
+                        st.write(f"**Reason:** {tr['error']}")
+                    steps = [s for s in (tr.get("screenshots") or []) if s.get("path") and os.path.exists(s["path"])]
+                    if steps:
+                        step_cols = st.columns(len(steps))
+                        for col, step in zip(step_cols, steps):
+                            col.image(step["path"], caption=step["label"], use_container_width=True)
+                    else:
+                        st.caption("No screenshot was captured for this test case.")
 
         if exec_res.get("stdout"):
             with st.expander("Console Output (stdout)", expanded=True):

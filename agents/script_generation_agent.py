@@ -42,6 +42,7 @@ class ScriptGenerationAgent(BaseAgent):
             timeout_ms=self.config.TIMEOUT,
             settle_ms=400 + 600 * retry_count,
             retry_note=retry_note,
+            shot_dir=state.get("run_dir") or self.config.LOGS_DIR,
         )
 
         state["current_script"] = script_code

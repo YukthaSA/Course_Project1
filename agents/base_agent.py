@@ -2,9 +2,11 @@
 Base agent class for all specialized agents in the testing framework
 """
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable, Tuple
 from state import AgentState
 from config import config
+from .llm_providers import PROVIDERS
+import asyncio
 import logging
 import json
 import time
@@ -21,12 +23,18 @@ if hasattr(sys.stdout, "reconfigure"):
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("AgentFramework")
 
+# Order in which other providers are tried when a stage's own provider is missing or fails.
+# Ollama is last: it is the slowest and only worth waiting for when nothing else works.
+FALLBACK_ORDER = ("gemini", "groq", "openai", "anthropic", "ollama")
+
+
 class BaseAgent(ABC):
     def __init__(self, name: str, model_client: Optional[Any] = None):
         self.name = name
         self.model_client = model_client
         self.logger = logging.getLogger(f"Agent.{name}")
         self.config = config
+        self.call_log: List[Dict[str, Any]] = []  # one record per call_llm: which model really answered
 
     @abstractmethod
     async def invoke(self, state: AgentState) -> AgentState:
@@ -92,6 +100,26 @@ class BaseAgent(ABC):
 
         return None
 
+    def _plan_attempts(self, provider: Optional[str], model_name: Optional[str]) -> List[Tuple[str, str]]:
+        """Ordered (provider, model) attempts for one call.
+
+        - explicit `provider` argument      -> exactly that provider, no cross-provider fallback
+        - global engine forced in the UI    -> exactly that provider (so a benchmark is never silently
+                                               answered by a different model)
+        - "auto" (default)                  -> this stage's own route, then the other available providers
+        """
+        if provider:
+            return [(provider.lower(), model_name or self.config.default_model(provider.lower()))]
+        forced = (self.config.LLM_PROVIDER or "auto").lower()
+        if forced != "auto":
+            return [(forced, self.config.default_model(forced))]
+        primary = self.config.get_stage_route(self.name)
+        attempts = [primary]
+        for other in FALLBACK_ORDER:
+            if other != primary[0]:
+                attempts.append((other, self.config.default_model(other)))
+        return attempts
+
     async def call_llm(
         self,
         prompt: str,
@@ -100,186 +128,48 @@ class BaseAgent(ABC):
         mock_fallback: Optional[Callable[[], str]] = None,
         provider: Optional[str] = None
     ) -> str:
-        """Call LLM API across configured providers: Gemini, Groq, Ollama, OpenAI, Anthropic.
-        Falls back seamlessly to smart deterministic agent implementation.
+        """Call the LLM assigned to this pipeline stage (see Config.STAGE_ROUTES).
+
+        Tries the stage's provider first, then the other available providers, and finally the
+        deterministic `mock_fallback`, so a missing key or a dead local daemon never halts a run.
+        Every call is recorded in `self.call_log` (provider, model, seconds, errors).
         """
-        active_provider = (provider or self.config.LLM_PROVIDER or "auto").lower()
-        full_prompt = f"{system_instruction}\n\n{prompt}" if system_instruction else prompt
+        attempts = self._plan_attempts(provider, model_name)
+        planned = f"{attempts[0][0]}/{attempts[0][1]}"
+        errors: List[str] = []
 
-        # 1. Groq Provider
-        if active_provider == "groq" or (active_provider == "auto" and self.config.has_valid_groq_key):
+        for index, (prov, model) in enumerate(attempts):
+            adapter = PROVIDERS.get(prov)
+            if adapter is None or not self.config.provider_available(prov):
+                if index == 0:
+                    errors.append(f"{prov}: not configured")
+                continue
+            started = time.time()
             try:
-                import urllib.request
-                groq_model = model_name if (model_name and "gemini" not in model_name) else self.config.GROQ_MODEL
-                headers = {
-                    "Authorization": f"Bearer {self.config.GROQ_API_KEY}",
-                    "Content-Type": "application/json",
-                    "User-Agent": "CourseProject1/1.0"
-                }
-                payload = {
-                    "model": groq_model,
-                    "messages": [
-                        *([{"role": "system", "content": system_instruction}] if system_instruction else []),
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.2
-                }
-                req = urllib.request.Request(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers=headers
-                )
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    text = data["choices"][0]["message"]["content"]
-                    if text:
-                        return text
-            except Exception as e:
-                self.log_error(f"Groq API call failed: {e}")
+                text = await asyncio.to_thread(adapter, self.config, model, system_instruction, prompt)
+            except Exception as exc:
+                errors.append(f"{prov}/{model}: {exc}")
+                self.log_error(f"{prov}/{model} call failed: {exc}")
+                continue
+            if not (text and text.strip()):
+                errors.append(f"{prov}/{model}: empty response")
+                self.log_error(f"{prov}/{model} returned an empty response")
+                continue
+            self.call_log.append({
+                "stage": self.name, "planned": planned, "provider": prov, "model": model,
+                "seconds": round(time.time() - started, 2), "fallback": f"{prov}/{model}" != planned,
+                "errors": errors,
+            })
+            self.log_info(f"answered by {prov}/{model} in {time.time() - started:.1f}s")
+            return text
 
-        # 2. Ollama Local Provider (via OpenAI-compatible endpoint)
-        if active_provider == "ollama" or (active_provider == "auto" and not self.config.has_valid_groq_key and not self.config.has_valid_google_key and self.config.is_ollama_available):
-            try:
-                import urllib.request
-                ollama_model = model_name if (model_name and "gemini" not in model_name) else self.config.OLLAMA_MODEL
-                url = f"{self.config.OLLAMA_BASE_URL.rstrip('/')}/v1/chat/completions"
-                payload = {
-                    "model": ollama_model,
-                    "messages": [
-                        *([{"role": "system", "content": system_instruction}] if system_instruction else []),
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.2,
-                    "max_tokens": 512,
-                    "options": {
-                        "num_predict": 512,
-                        "temperature": 0.2,
-                        "num_ctx": 2048
-                    }
-                }
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers={"Content-Type": "application/json"}
-                )
-                ollama_timeout = int(os.getenv("OLLAMA_TIMEOUT", "40"))
-                with urllib.request.urlopen(req, timeout=ollama_timeout) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    text = data["choices"][0]["message"]["content"]
-                    if text:
-                        return text
-            except Exception as e:
-                self.log_error(f"Ollama local call failed: {e}")
-
-        # 3. Google Gemini Provider
-        if active_provider in ("gemini", "google") or (active_provider == "auto" and self.config.has_valid_google_key):
-            try:
-                import urllib.request
-                gem_model = model_name if (model_name and "gemini" in model_name) else self.config.GEMINI_FLASH_MODEL
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_model}:generateContent?key={self.config.GOOGLE_API_KEY}"
-                payload = {
-                    "contents": [{
-                        "parts": [{"text": full_prompt}]
-                    }]
-                }
-                req = urllib.request.Request(
-                    url,
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers={"Content-Type": "application/json"}
-                )
-                with urllib.request.urlopen(req, timeout=20) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    text = data["candidates"][0]["content"]["parts"][0]["text"]
-                    if text:
-                        return text
-            except Exception as e:
-                self.log_error(f"Google Gemini call failed: {e}")
-
-        # 4. OpenAI Provider
-        if (active_provider == "openai" or (active_provider == "auto" and self.config.has_valid_openai_key)) and self.config.has_valid_openai_key:
-            try:
-                import urllib.request
-                headers = {
-                    "Authorization": f"Bearer {self.config.OPENAI_API_KEY}",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": model_name or self.config.OPENAI_MODEL,
-                    "messages": [
-                        *([{"role": "system", "content": system_instruction}] if system_instruction else []),
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.2
-                }
-                req = urllib.request.Request(
-                    "https://api.openai.com/v1/chat/completions",
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers=headers
-                )
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    text = data["choices"][0]["message"]["content"]
-                    if text:
-                        return text
-            except Exception as e:
-                self.log_error(f"OpenAI call failed: {e}")
-
-        # 5. Anthropic Claude Provider
-        if (active_provider == "anthropic" or (active_provider == "auto" and self.config.has_valid_anthropic_key)) and self.config.has_valid_anthropic_key:
-            try:
-                import urllib.request
-                headers = {
-                    "x-api-key": self.config.ANTHROPIC_API_KEY,
-                    "anthropic-version": "2023-06-01",
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "model": model_name or self.config.ANTHROPIC_MODEL,
-                    "max_tokens": 4096,
-                    "messages": [{"role": "user", "content": full_prompt}],
-                    "temperature": 0.2
-                }
-                req = urllib.request.Request(
-                    "https://api.anthropic.com/v1/messages",
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers=headers
-                )
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    text = "".join(b.get("text", "") for b in data.get("content", []))
-                    if text:
-                        return text
-            except Exception as e:
-                self.log_error(f"Anthropic call failed: {e}")
-
-        # Fallback to deterministic generator
+        # Deterministic generator: always available, never hits the network
         if mock_fallback:
             self.log_info("Executing deterministic agent generator")
-            try:
-                return mock_fallback()
-            except Exception as e:
-                self.log_error(f"Deterministic generator failed: {e}")
+            self.call_log.append({
+                "stage": self.name, "planned": planned, "provider": "deterministic", "model": "rule-based",
+                "seconds": 0.0, "fallback": True, "errors": errors,
+            })
+            return mock_fallback()
 
-        # Cloud safety net if local provider timed out or had connection drop
-        if self.config.has_valid_groq_key:
-            try:
-                import urllib.request
-                headers = {"Authorization": f"Bearer {self.config.GROQ_API_KEY}", "Content-Type": "application/json"}
-                payload = {
-                    "model": self.config.GROQ_MODEL,
-                    "messages": [
-                        *([{"role": "system", "content": system_instruction}] if system_instruction else []),
-                        {"role": "user", "content": prompt}
-                    ],
-                    "temperature": 0.2
-                }
-                req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions", data=json.dumps(payload).encode("utf-8"), headers=headers)
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                    text = data["choices"][0]["message"]["content"]
-                    if text:
-                        return text
-            except Exception:
-                pass
-
-        return "{}"
+        raise RuntimeError(f"No valid LLM provider succeeded for agent '{self.name}': {'; '.join(errors) or 'none configured'}")

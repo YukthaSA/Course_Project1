@@ -38,8 +38,11 @@ from playwright.async_api import async_playwright
 TARGET_URL = "__TARGET_URL__"
 HEADLESS = __HEADLESS__
 TIMEOUT_MS = __TIMEOUT__
+NAV_TIMEOUT_MS = max(TIMEOUT_MS, 20000)  # real external sites are slower than localhost
 SETTLE_MS = __SETTLE_MS__
-MAX_FAIL_SHOTS = 8
+SHOT_DIR = __SHOT_DIR__
+USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/124.0.0.0 Safari/537.36")
 
 TEST_CASES = __TEST_CASES__
 
@@ -62,22 +65,27 @@ class Skip(Exception):
 
 
 async def resolve_target():
-    """Return (url, server). Falls back to the built-in demo target if TARGET_URL is unreachable."""
+    """Confirm TARGET_URL answers. There is deliberately NO fallback to another site."""
     async with async_playwright() as probe:
         browser = await probe.chromium.launch(headless=True)
         try:
-            page = await browser.new_page()
-            await page.goto(TARGET_URL, timeout=3000, wait_until="domcontentloaded")
-            return TARGET_URL, None
+            page = await browser.new_page(user_agent=USER_AGENT)
+            await page.goto(TARGET_URL, timeout=NAV_TIMEOUT_MS, wait_until="domcontentloaded")
         except Exception as err:
-            print(f"[NOTICE] Target {TARGET_URL} unreachable ({str(err).splitlines()[0]}). "
-                  "Starting the built-in demo target (engine/demo_app.py).")
+            raise RuntimeError(f"Target {TARGET_URL} is unreachable: {str(err).splitlines()[0]}")
         finally:
             await browser.close()
-    sys.path.insert(0, os.getcwd())
-    from engine.demo_app import start_demo_server
-    server, port = start_demo_server(0)
-    return f"http://127.0.0.1:{port}", server
+    return TARGET_URL, None
+
+
+async def snap(page, rec, label):
+    """Save a screenshot of the page as it is right now and remember it for this test case."""
+    path = os.path.join(SHOT_DIR, f"{rec['id']}_{len(rec['steps']) + 1}_{label}.png")
+    try:
+        await page.screenshot(path=path)
+        rec["steps"].append({"label": label, "path": path})
+    except Exception:
+        pass
 
 
 async def inspect_dom_targets(page):
@@ -207,6 +215,7 @@ async def perform(page, base_url, data, rec):
         await chooser.set_input_files({"name": name, "mimeType": MIME.get(name.rsplit(".", 1)[-1].lower(),
                                        "application/octet-stream"), "buffer": b"0" * size})
         rec["submitted"] = True
+        await snap(page, rec, "filled")
         await click_submit(page, chooser, rec)
         return
     if not any(k in data for k in ("email", "password", "value")):
@@ -218,6 +227,8 @@ async def perform(page, base_url, data, rec):
         field = await fill_fields(page, data)
         rec["submitted"] = True
         rec["navigated"] = False
+        if n == 0:
+            await snap(page, rec, "filled")
         await click_submit(page, field, rec)
 
 
@@ -274,10 +285,20 @@ async def check(page, assertion, rec):
     return False, f"unknown assertion type '{kind}'"
 
 
-async def run_case(context, base_url, tc, shots):
+async def load_page(page, url):
+    """Navigate and wait until the page has actually rendered."""
+    await page.goto(url, wait_until="domcontentloaded", timeout=NAV_TIMEOUT_MS)
+    try:
+        await page.wait_for_load_state("load", timeout=4000)
+    except Exception:
+        pass
+    await page.wait_for_timeout(SETTLE_MS)
+
+
+async def run_case(context, base_url, tc):
     page = await context.new_page()
     page.set_default_timeout(TIMEOUT_MS)
-    rec = {"status": 200, "dialog": False, "submitted": False, "navigated": False}
+    rec = {"id": tc["id"], "steps": [], "status": 200, "dialog": False, "submitted": False, "navigated": False}
 
     async def on_dialog(dialog):
         rec["dialog"] = True
@@ -292,10 +313,13 @@ async def run_case(context, base_url, tc, shots):
               "tier": tc["tier"], "type": tc["type"], "status": "PASSED", "error": None}
     start = time.time()
     try:
+        await load_page(page, base_url)
+        await snap(page, rec, "loaded")
+        if not tc.get("applicable", True):
+            raise Skip("Requirement cannot be exercised on this page (marked not applicable at design time)")
         assertions = tc.get("assertions") or []
         if not assertions:
             raise Skip("Test case defines no assertions, so there is nothing to verify")
-        await page.goto(base_url, wait_until="domcontentloaded")
         await perform(page, base_url, tc.get("test_data") or {}, rec)
         failures = []
         for assertion in assertions:
@@ -309,43 +333,28 @@ async def run_case(context, base_url, tc, shots):
     except Exception as err:
         result.update(status="FAILED", error=f"{type(err).__name__}: {str(err).splitlines()[0]}")
     result["duration"] = round(time.time() - start, 2)
-    # Capture screenshot proof for every executed test case (Passed & Failed)
-    shot_filename = f"{tc['id']}_{result['status'].lower()}.png"
-    shot_path = os.path.join("logs", shot_filename)
-    try:
-        await page.screenshot(path=shot_path)
-        result["screenshot"] = shot_filename
-    except Exception:
-        result["screenshot"] = None
-
-    if result["status"] == "FAILED" and shots["n"] < MAX_FAIL_SHOTS:
-        shots["n"] += 1
-        try:
-            await page.screenshot(path=os.path.join("logs", f"fail_{tc['id']}.png"))
-        except Exception:
-            pass
+    await snap(page, rec, "result")
+    result["screenshots"] = rec["steps"]
+    result["screenshot"] = rec["steps"][-1]["path"] if rec["steps"] else None
     await page.close()
     return result
 
 
 async def main():
-    os.makedirs("logs", exist_ok=True)
+    os.makedirs(SHOT_DIR, exist_ok=True)
     base_url, server = await resolve_target()
     print(f"[RUN] Executing {len(TEST_CASES)} test cases against {base_url}")
-    results, shots = [], {"n": 0}
+    results = []
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=HEADLESS)
         try:
-            context = await browser.new_context(viewport={"width": 1280, "height": 720})
+            context = await browser.new_context(viewport={"width": 1280, "height": 720}, user_agent=USER_AGENT)
             for tc in TEST_CASES:
-                r = await run_case(context, base_url, tc, shots)
+                r = await run_case(context, base_url, tc)
                 results.append(r)
                 mark = {"PASSED": "PASS", "FAILED": "FAIL", "SKIPPED": "SKIP"}[r["status"]]
                 extra = f" -> {r['error']}" if r["error"] else ""
                 print(f"[{mark}] {tc['label']} ({tc['id']}, {tc['requirement_id']}){extra}")
-            page = await context.new_page()
-            await page.goto(base_url, wait_until="domcontentloaded")
-            await page.screenshot(path=os.path.join("logs", "execution_result.png"))
         finally:
             await browser.close()
     counts = {s: sum(1 for r in results if r["status"] == s) for s in ("PASSED", "FAILED", "SKIPPED")}
@@ -378,11 +387,12 @@ def _case_for_script(tc: Dict[str, Any]) -> Dict[str, Any]:
         "type": tc.get("type", "Positive"),
         "test_data": tc.get("test_data") or {},
         "assertions": tc.get("assertions") or [],
+        "applicable": tc.get("applicable") is not False,
     }
 
 
 def build_script(test_cases: List[Dict[str, Any]], target_url: str, headless: bool,
-                 timeout_ms: int, settle_ms: int = 400, retry_note: str = "") -> str:
+                 timeout_ms: int, settle_ms: int = 400, retry_note: str = "", shot_dir: str = "logs") -> str:
     """Return the full Playwright script source for the given (tier-sorted) test cases."""
     cases = [_case_for_script(tc) for tc in test_cases]
     embedded = pprint.pformat(cases, width=110, sort_dicts=False)
@@ -393,5 +403,6 @@ def build_script(test_cases: List[Dict[str, Any]], target_url: str, headless: bo
             .replace("__HEADLESS__", str(bool(headless)))
             .replace("__TIMEOUT__", str(int(timeout_ms)))
             .replace("__SETTLE_MS__", str(int(settle_ms)))
+            .replace("__SHOT_DIR__", repr(shot_dir))
             .replace("__RETRY_NOTE__", note)
             .replace("__TEST_CASES__", embedded))

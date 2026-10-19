@@ -19,19 +19,44 @@ class PlaywrightRunner:
         self.logs_dir = config.LOGS_DIR
         os.makedirs(self.logs_dir, exist_ok=True)
 
-    def execute_script(self, script_code: str, script_name: str = "temp_runner.py") -> Dict[str, Any]:
+    def probe_target(self, url: str, out_dir: str, headless: bool = True) -> Dict[str, Any]:
+        """Open the target in a real browser (engine/site_probe.py): reachability, health checks,
+        desktop + mobile screenshots and a DOM inventory. Never raises."""
+        os.makedirs(out_dir, exist_ok=True)
+        probe_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "site_probe.py")
+        cmd = [sys.executable, probe_script, url, out_dir]
+        if not headless:
+            cmd.append("--headed")
+        failure = {"url": url, "reachable": False, "checks": [], "score": 0, "screenshots": {}, "inventory": {}}
+        try:
+            done = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                  timeout=150, cwd=config.BASE_DIR)
+        except subprocess.TimeoutExpired:
+            return {**failure, "error": "Target probe timed out after 150s"}
+        except Exception as err:
+            return {**failure, "error": f"Could not start target probe: {err}"}
+        for line in done.stdout.splitlines():
+            if line.startswith("PROBE_RESULT: "):
+                try:
+                    return json.loads(line[len("PROBE_RESULT: "):])
+                except json.JSONDecodeError:
+                    break
+        return {**failure, "error": (done.stderr.strip().splitlines() or ["Target probe produced no result"])[-1][:200]}
+
+    def execute_script(self, script_code: str, script_name: str = "temp_runner.py", shot_dir: str = "") -> Dict[str, Any]:
         """Execute Playwright Python script in isolated subprocess and return detailed execution report"""
+        self.shot_dir = shot_dir or self.logs_dir
         script_path = os.path.join(self.logs_dir, script_name)
         with open(script_path, "w", encoding="utf-8") as f:
             f.write(script_code)
 
         # Allow sufficient subprocess buffer time (startup + browser launch + execution)
         subproc_timeout = max(25.0, (self.timeout / 1000.0) + 15.0)
-        # Per-test scripts need time proportional to the number of test cases (~2s each)
+        # Per-test scripts need time proportional to the number of test cases (page load + up to 3 screenshots each)
         import re as _re
         _m = _re.search(r"Test cases:\s*(\d+)", script_code[:600])
         if _m:
-            subproc_timeout = max(subproc_timeout, 20.0 + 2.5 * int(_m.group(1)))
+            subproc_timeout = max(subproc_timeout, 30.0 + 6.0 * int(_m.group(1)))
         logger.info(f"▶️ Executing Playwright script at '{script_path}' (Subprocess Timeout: {subproc_timeout}s)...")
         start_time = time.time()
 
@@ -146,10 +171,11 @@ class PlaywrightRunner:
             }
 
     def _gather_screenshots(self) -> List[str]:
-        """Find any screenshot PNG files generated in logs directory"""
+        """Screenshot PNGs written by the script during this run"""
+        folder = getattr(self, "shot_dir", self.logs_dir)
         shots = []
-        if os.path.exists(self.logs_dir):
-            for fname in os.listdir(self.logs_dir):
+        if os.path.exists(folder):
+            for fname in sorted(os.listdir(folder)):
                 if fname.endswith(".png"):
-                    shots.append(os.path.join(self.logs_dir, fname))
+                    shots.append(os.path.join(folder, fname))
         return shots

@@ -399,7 +399,8 @@ def validate_test_case(tc: Dict[str, Any]) -> List[str]:
         issues.append("no steps")
     asserts = tc.get("assertions") or []
     if not asserts:
-        issues.append("no assertions")
+        if tc.get("applicable") is not False:
+            issues.append("no assertions")
     elif any(a.get("type") not in ASSERTION_TYPES for a in asserts):
         issues.append("unknown assertion type")
     if tc.get("type") != "Positive" and not tc.get("test_data"):
@@ -493,6 +494,24 @@ class TestDesignAgent(BaseAgent):
 
         return lookup
 
+    @staticmethod
+    def _grounding_text(profile: Dict[str, Any], url: str) -> str:
+        """Compact description of the live target page, taken from the DOM probe (empty if no probe ran)."""
+        if not profile or not (profile.get("inputs") or profile.get("buttons")):
+            return ""
+        inputs = [{k: i.get(k) for k in ("type", "name", "label", "placeholder") if i.get(k)} for i in profile.get("inputs", [])[:15]]
+        buttons = [b.get("text") for b in profile.get("buttons", [])[:12] if b.get("text")]
+        return f"""
+Live page inventory of the application under test ({url}), read from its real DOM:
+- input fields: {json.dumps(inputs)}
+- buttons: {json.dumps(buttons)}
+- headings: {json.dumps(profile.get("headings", [])[:6])}
+Design cases that can be exercised on THESE elements. test_data keys the executor understands:
+email, password, value (any other text field), file_name + size_bytes, attempts (repeat count).
+If a requirement cannot be exercised on this page, still return its case but set "applicable": false and "assertions": []
+(it will be reported as SKIPPED - never invent assertions that would pass without testing anything).
+"""
+
     def _prompt(self, chunk: List[Dict[str, Any]], tier_lookup: Dict[str, int]) -> str:
         tiers = {r.get("id"): tier_lookup.get(r.get("id", ""), 2) for r in chunk}
         return f"""Design test cases for these requirements:
@@ -518,7 +537,7 @@ Rules:
 - Do not invent exact UI wording. Use "assertions" with keyword lists instead.
 - Allowed assertion types: error_shown (value: list of keywords), no_error_shown, text_visible (value: str),
   url_contains (value: str), authenticated, not_authenticated, no_server_error, no_dialog.
-
+{getattr(self, "_grounding", "")}
 Return ONLY a JSON array. Each object:
 {{"title": str, "type": "Positive|Negative|Boundary|Security", "technique": str, "requirement_id": str, "tier": 1|2|3,
   "preconditions": str, "test_data": {{...}}, "steps": [str], "expected_result": str,
@@ -544,6 +563,9 @@ Return ONLY a JSON array. Each object:
             return state
 
         tier_lookup = self._build_tier_lookup(state)
+        self._grounding = self._grounding_text(state.get("target_profile") or {}, state.get("target_url", ""))
+        if self._grounding:
+            self.log_info("Grounding test design in the live DOM of the target")
 
         all_cases: List[Dict[str, Any]] = []
         dropped = 0

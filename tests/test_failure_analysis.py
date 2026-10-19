@@ -63,7 +63,11 @@ class _FakeRunner:
     def __init__(self, *results):
         self.results, self.calls = list(results), 0
 
-    def execute_script(self, script, script_name=""):
+    def probe_target(self, url, out_dir, headless=True):
+        return {"url": url, "reachable": True, "status": 200, "load_ms": 10, "checks": [], "score": 100,
+                "screenshots": {}, "inventory": {}}
+
+    def execute_script(self, script, script_name="", shot_dir=""):
         self.calls += 1
         return self.results[min(self.calls - 1, len(self.results) - 1)]
 

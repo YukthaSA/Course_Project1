@@ -49,14 +49,42 @@ class Config:
     # Active default provider: "gemini", "groq", "ollama", "openai", "anthropic"
     LLM_PROVIDER = os.getenv("LLM_PROVIDER", "auto").lower()
 
-    GEMINI_FLASH_MODEL = os.getenv("GEMINI_FLASH_MODEL", "gemini-2.5-flash")
-    GEMINI_PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro")
+    GEMINI_FLASH_MODEL = os.getenv("GEMINI_FLASH_MODEL", "gemini-3.5-flash")
+    GEMINI_PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-3.5-flash")
     GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
     OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
     ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
-    
-    TARGET_URL = os.getenv("TARGET_URL", "http://127.0.0.1:8080")
+
+    # Local models on CPU are slow: generous read timeout, enough context for a requirement chunk
+    OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+    OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
+
+    # Per-stage model routing: stage name -> (provider, model).
+    # Override any stage from .env with LLM_ROUTE_<STAGE>=provider:model, e.g.
+    #   LLM_ROUTE_TEST_DESIGN=groq:openai/gpt-oss-120b
+    # Defaults use only models that were verified to answer with the configured keys.
+    STAGE_ROUTE_DEFAULTS = {
+        "Requirement_Extraction": ("gemini", "gemini-3.1-flash-lite"),  # long SRS text -> big context, cheap and fast
+        "Requirement_Validation": ("groq", "openai/gpt-oss-20b"),       # many short audits -> fastest inference
+        "Risk_Coverage_Planning": ("groq", "openai/gpt-oss-120b"),      # judgement-heavy prioritisation -> largest open model
+        "Test_Design": ("gemini", "gemini-3.5-flash"),                  # precise structured JSON, largest output
+        "Review_Security": ("groq", "qwen/qwen3.8-27b"),                # different model family than the designer = independent review
+        "Failure_Analysis": ("ollama", "llama3.2:3b"),                  # works on the client app's failure logs: stays on this machine
+    }
+    STAGE_ORDER = list(STAGE_ROUTE_DEFAULTS.keys())
+    STAGE_ROUTES: Dict[str, Any] = {}
+
+    # Models offered in the dashboard per provider (Ollama is listed live from the daemon)
+    PROVIDER_MODEL_CHOICES = {
+        "gemini": ["gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-flash-latest"],
+        "groq": ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"],
+        "openai": ["gpt-4o", "gpt-4o-mini"],
+        "anthropic": ["claude-3-5-sonnet-20241022"],
+    }
+
+    # Empty = built-in demo app (used by the CLI and CI). The dashboard always asks explicitly.
+    TARGET_URL = os.getenv("TARGET_URL", "")
     HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
     TIMEOUT = int(os.getenv("TIMEOUT", "5000"))
     MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
@@ -78,6 +106,12 @@ class Config:
         os.makedirs(self.SAMPLES_DIR, exist_ok=True)
         os.makedirs(self.PURE_DATA_DIR, exist_ok=True)
         os.makedirs(self.PURE_SAMPLES_DIR, exist_ok=True)
+        self.STAGE_ROUTES = dict(self.STAGE_ROUTE_DEFAULTS)
+        for stage in self.STAGE_ORDER:
+            raw = os.getenv(f"LLM_ROUTE_{stage.upper()}", "").strip()
+            if ":" in raw:
+                provider, model = raw.split(":", 1)
+                self.STAGE_ROUTES[stage] = (provider.strip().lower(), model.strip())
 
     @property
     def has_valid_google_key(self) -> bool:
@@ -97,13 +131,49 @@ class Config:
 
     @property
     def is_ollama_available(self) -> bool:
+        return bool(self.list_ollama_models())
+
+    def list_ollama_models(self) -> List[str]:
+        """Models currently installed in the local Ollama daemon ([] if it is not running). Cached for 15s."""
+        import time
+        cached = getattr(self, "_ollama_cache", None)
+        if cached and time.time() - cached[0] < 15:
+            return cached[1]
+        names: List[str] = []
         try:
             import urllib.request
             req = urllib.request.Request(f"{self.OLLAMA_BASE_URL.rstrip('/')}/api/tags", headers={"User-Agent": "AgenticQA"})
-            with urllib.request.urlopen(req, timeout=1.0) as res:
-                return res.status == 200
+            with urllib.request.urlopen(req, timeout=1.5) as res:
+                names = [m["name"] for m in json.loads(res.read().decode("utf-8")).get("models", [])]
         except Exception:
-            return False
+            names = []
+        self._ollama_cache = (time.time(), names)
+        return names
+
+    def provider_available(self, provider: str) -> bool:
+        return {
+            "gemini": self.has_valid_google_key,
+            "google": self.has_valid_google_key,
+            "groq": self.has_valid_groq_key,
+            "openai": self.has_valid_openai_key,
+            "anthropic": self.has_valid_anthropic_key,
+            "ollama": self.is_ollama_available,
+        }.get(provider, False)
+
+    def default_model(self, provider: str) -> str:
+        return {
+            "gemini": self.GEMINI_FLASH_MODEL, "google": self.GEMINI_FLASH_MODEL, "groq": self.GROQ_MODEL,
+            "openai": self.OPENAI_MODEL, "anthropic": self.ANTHROPIC_MODEL, "ollama": self.OLLAMA_MODEL,
+        }.get(provider, "")
+
+    def get_stage_route(self, stage: str):
+        """(provider, model) configured for a pipeline stage; stages without a route use the default model of the first available provider."""
+        if stage in self.STAGE_ROUTES:
+            return self.STAGE_ROUTES[stage]
+        for provider in ("gemini", "groq", "openai", "anthropic", "ollama"):
+            if self.provider_available(provider):
+                return provider, self.default_model(provider)
+        return "none", ""
 
     def get_pure_catalog(self) -> List[Dict[str, Any]]:
         """Return cached PURE documents catalog or parse dynamically"""
