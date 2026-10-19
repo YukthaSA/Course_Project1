@@ -50,6 +50,7 @@ class AgentState(TypedDict, total=False):
     # Failure Analysis & Retry Control
     error_analysis: Optional[Dict[str, Any]]
     retry_count: int
+    max_retries: Optional[int]
     last_error: Optional[str]
     retry_history: Optional[List[Dict[str, Any]]]
     

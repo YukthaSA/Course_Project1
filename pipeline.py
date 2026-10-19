@@ -1,6 +1,7 @@
 """
-Agentic QA Pipeline Orchestration - Connects specialized agents, execution engine, retry loops, and human-in-the-loop escalation
-Enhanced with PURE benchmark dataset support and detailed quality analytics
+Agentic QA Pipeline Orchestration - Built on LangGraph StateGraph
+Connects specialized agents, live site health probing, DOM element grounding,
+Playwright sandboxed execution, failure analysis, and cyclical self-healing retries.
 """
 import os
 import re
@@ -8,8 +9,10 @@ import json
 import asyncio
 import logging
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
+
+from langgraph.graph import StateGraph, START, END
 
 from config import config
 from state import AgentState, create_initial_state
@@ -34,13 +37,11 @@ def build_traceability(requirements, test_cases, test_results):
       [{requirement_id, requirement_desc, test_case_id, test_title, status}]
     where status is VERIFIED / FAILED / NOT_COVERED / PARTIAL
     """
-    # Index test results by test_case_id
     result_by_tc = {}
     for r in (test_results or []):
         tc_id = r.get("test_case_id", "")
         result_by_tc[tc_id] = r.get("status", "NOT_RUN")
 
-    # Index test cases by requirement_id
     tc_by_req = {}
     for tc in (test_cases or []):
         req_id = tc.get("requirement_id", "")
@@ -83,6 +84,7 @@ def build_traceability(requirements, test_cases, test_results):
 
     return table
 
+
 class AgenticQAPipeline:
     def __init__(self, model_client=None):
         self.req_extractor = RequirementExtractionAgent(model_client)
@@ -93,6 +95,308 @@ class AgenticQAPipeline:
         self.script_generator = ScriptGenerationAgent(model_client)
         self.failure_analyzer = FailureAnalysisAgent(model_client)
         self.runner = PlaywrightRunner(timeout=config.TIMEOUT)
+        self.status_callback = None
+        self._compiled_graph = None
+
+    def _notify(self, msg: str, step: int, state: AgentState):
+        logger.info(f"[{step}/7] {msg}")
+        if self.status_callback:
+            try:
+                self.status_callback(msg, step, state)
+            except Exception:
+                pass
+
+    # =========================================================================
+    # LANGGRAPH NODES
+    # =========================================================================
+
+    async def _node_site_probe(self, state: AgentState) -> Dict[str, Any]:
+        """Stage 0: Probe target website/app health and extract DOM inventory."""
+        self._notify("Stage 0/7: Opening the target in a real browser and checking its health...", 0, state)
+        target_url = state.get("target_url", "")
+        run_dir = state.get("run_dir", config.LOGS_DIR)
+        health = await asyncio.to_thread(self.runner.probe_target, target_url, os.path.join(run_dir, "target"), config.HEADLESS)
+        profile = health.get("inventory") or {}
+
+        if not health.get("reachable"):
+            reason = health.get("error") or "no response"
+            logger.error(f"❌ Target {target_url} is not reachable: {reason}")
+            return {
+                "target_health": health,
+                "target_profile": profile,
+                "execution_result": {
+                    "status": "TARGET_UNREACHABLE",
+                    "error": f"{target_url} is not reachable: {reason}",
+                    "stdout": "", "stderr": "", "duration_seconds": 0, "screenshots": []
+                },
+                "human_review_required": True,
+                "human_review_context": {"reason": "target_unreachable", "last_error": reason, "total_attempts": 0}
+            }
+
+        logger.info(f"✅ Target is up: HTTP {health.get('status')}, {health.get('load_ms')} ms, "
+                    f"health score {health.get('score')}/100, {len(profile.get('inputs', []))} input field(s) found")
+        return {"target_health": health, "target_profile": profile}
+
+    def _route_after_probe(self, state: AgentState) -> str:
+        """Route to requirement extraction if target is reachable, else finalize immediately."""
+        health = state.get("target_health") or {}
+        if not health.get("reachable", True):
+            return "finalize"
+        return "extract_requirements"
+
+    async def _node_extract_requirements(self, state: AgentState) -> Dict[str, Any]:
+        """Stage 1: Extract testable requirements from SRS text."""
+        self._notify("Stage 1/7: Extracting testable requirements from SRS...", 1, state)
+        res = await self.req_extractor.invoke(state)
+        return {"requirements": res.get("requirements", [])}
+
+    async def _node_validate_requirements(self, state: AgentState) -> Dict[str, Any]:
+        """Stage 2: Audit requirements for ambiguity, completeness, and testability."""
+        self._notify("Stage 2/7: Auditing requirements for clarity, ambiguity, and testability...", 2, state)
+        res = await self.req_validator.invoke(state)
+        return {
+            "validated_requirements": res.get("validated_requirements", []),
+            "validation_report": res.get("validation_report"),
+            "quality_metrics": res.get("quality_metrics")
+        }
+
+    async def _node_plan_risk_coverage(self, state: AgentState) -> Dict[str, Any]:
+        """Stage 3: Assess risks and establish tier-based testing priorities."""
+        self._notify("Stage 3/7: Analyzing risks and prioritizing automated test suites...", 3, state)
+        res = await self.risk_planner.invoke(state)
+        return {
+            "test_plan": res.get("test_plan"),
+            "high_risk_areas": res.get("high_risk_areas"),
+            "testing_priorities": res.get("testing_priorities"),
+            "risk_matrix": res.get("risk_matrix")
+        }
+
+    async def _node_design_tests(self, state: AgentState) -> Dict[str, Any]:
+        """Stage 4: Design structured test cases with BDD/Gherkin and DOM element grounding."""
+        self._notify("Stage 4/7: Designing structured test cases and BDD / Gherkin specifications...", 4, state)
+        res = await self.test_designer.invoke(state)
+        return {
+            "test_cases": res.get("test_cases", []),
+            "gherkin_scenarios": res.get("gherkin_scenarios")
+        }
+
+    async def _node_review_security(self, state: AgentState) -> Dict[str, Any]:
+        """Stage 5: Review test cases against OWASP security rules and approve suite."""
+        self._notify("Stage 5/7: Reviewing test cases against OWASP security compliance rules...", 5, state)
+        res = await self.reviewer.invoke(state)
+        return {
+            "approved_test_cases": res.get("approved_test_cases", []),
+            "review_results": res.get("review_results"),
+            "security_audit": res.get("security_audit")
+        }
+
+    async def _node_generate_script(self, state: AgentState) -> Dict[str, Any]:
+        """Stage 6: Generate Playwright automation script bound to target URL."""
+        attempt = state.get("retry_count", 0)
+        self._notify(f"Stage 6/7: Generating Playwright automation scripts (v{attempt + 1})...", 6, state)
+        res = await self.script_generator.invoke(state)
+        all_scripts = dict(state.get("all_scripts") or {})
+        all_scripts[f"v{attempt + 1}"] = res.get("current_script", "")
+        return {
+            "current_script": res.get("current_script", ""),
+            "all_scripts": all_scripts
+        }
+
+    async def _node_execute_playwright(self, state: AgentState) -> Dict[str, Any]:
+        """Stage 7: Execute Playwright script in sandboxed browser against live target."""
+        attempt = state.get("retry_count", 0)
+        max_retries = state.get("max_retries", config.MAX_RETRIES)
+        self._notify(f"Stage 7/7: Executing Playwright Script (Attempt #{attempt + 1}/{max_retries})...", 7, state)
+        current_script = state.get("current_script", "")
+        run_dir = state.get("run_dir", config.LOGS_DIR)
+
+        exec_res = self.runner.execute_script(current_script, script_name=f"test_run_v{attempt + 1}.py",
+                                              shot_dir=run_dir)
+        test_results = exec_res.get("test_results") or []
+        metrics = dict(state.get("metrics") or {})
+
+        if exec_res.get("status") == "PASSED":
+            logger.info(f"✅ EXECUTION SUCCESSFUL on Attempt #{attempt + 1}!")
+            metrics["passed_scripts"] = metrics.get("passed_scripts", 0) + 1
+            return {
+                "execution_result": exec_res,
+                "test_results": test_results,
+                "metrics": metrics,
+                "human_review_required": False
+            }
+        else:
+            logger.warning(f"⚠️ Execution failed on Attempt #{attempt + 1}: {exec_res.get('error')}")
+            metrics["failed_scripts"] = metrics.get("failed_scripts", 0) + 1
+            retry_history = list(state.get("retry_history") or [])
+            retry_history.append({
+                "attempt": attempt + 1,
+                "error": exec_res.get("error"),
+                "duration": exec_res.get("duration_seconds")
+            })
+            return {
+                "execution_result": exec_res,
+                "test_results": test_results,
+                "metrics": metrics,
+                "last_error": exec_res.get("error"),
+                "retry_history": retry_history
+            }
+
+    def _route_after_execution(self, state: AgentState) -> str:
+        """Route to finalize if passed, or to analyze_failure if any test or script failed."""
+        exec_res = state.get("execution_result") or {}
+        if exec_res.get("status") == "PASSED":
+            return "finalize"
+        return "analyze_failure"
+
+    async def _node_analyze_failure(self, state: AgentState) -> Dict[str, Any]:
+        """Analyze failure logs, diagnose defect vs script issue, and manage retry cycle."""
+        logger.info("⚡ Triggering Failure Analysis Agent...")
+        res = await self.failure_analyzer.invoke(state)
+        analysis = res.get("error_analysis") or {}
+        retry_history = list(state.get("retry_history") or [])
+        if retry_history:
+            retry_history[-1]["root_cause"] = analysis.get("root_cause")
+
+        attempt = state.get("retry_count", 0)
+        max_retries = state.get("max_retries", config.MAX_RETRIES)
+        can_recover = analysis.get("can_auto_recover", True) and (attempt < max_retries - 1)
+
+        updates = {
+            "error_analysis": analysis,
+            "retry_history": retry_history
+        }
+
+        if can_recover:
+            logger.info("🔧 Failures look script/locator related - retrying with an adjusted script.")
+            updates["retry_count"] = attempt + 1
+            updates["human_review_required"] = False
+        else:
+            if attempt < max_retries - 1:
+                logger.info("🛑 Retrying cannot fix these failures - escalating without further attempts.")
+            else:
+                logger.error("❌ Max retries reached. Escalating persistent failure to Human Review.")
+            exec_res = state.get("execution_result") or {}
+            metrics = dict(state.get("metrics") or {})
+            metrics["human_interventions"] = 1
+            updates["metrics"] = metrics
+            updates["human_review_required"] = True
+            updates["human_review_context"] = {
+                "reason": analysis.get("escalation_reason", "persistent_failure"),
+                "last_error": exec_res.get("error"),
+                "total_attempts": attempt + 1,
+                "summary": analysis.get("summary", {}),
+                "failures": analysis.get("failures", []),
+                "script": state.get("current_script", ""),
+                "stdout": exec_res.get("stdout"),
+                "stderr": exec_res.get("stderr"),
+                "screenshots": exec_res.get("screenshots", [])
+            }
+
+        return updates
+
+    def _route_after_failure_analysis(self, state: AgentState) -> str:
+        """Cyclical LangGraph Edge: route back to script generation if recoverable, else finalize."""
+        attempt = state.get("retry_count", 0)
+        max_retries = state.get("max_retries", config.MAX_RETRIES)
+        analysis = state.get("error_analysis") or {}
+        if analysis.get("can_auto_recover", True) and attempt < max_retries:
+            if not state.get("human_review_required", False):
+                return "generate_script"
+        return "finalize"
+
+    async def _node_finalize(self, state: AgentState) -> Dict[str, Any]:
+        """Final stage: build requirement-test traceability matrix and save output artifact."""
+        metadata = state.get("document_metadata") or {}
+        traceability = build_traceability(
+            state.get("requirements", []),
+            state.get("test_cases", []),
+            state.get("test_results", [])
+        )
+        llm_trace = self._llm_trace()
+        if state.get("execution_result", {}).get("status") == "TARGET_UNREACHABLE":
+            final_status = "TARGET_UNREACHABLE"
+        elif state.get("human_review_required"):
+            final_status = "REQUIRES_HUMAN_REVIEW"
+        else:
+            final_status = "PASSED"
+
+        final_results = {
+            "completed_at": datetime.now().isoformat(),
+            "status": final_status,
+            "passed": state.get("execution_result", {}).get("status") == "PASSED",
+            "document_title": metadata.get("title") if metadata else "Custom SRS",
+            "domain": metadata.get("domain") if metadata else "General",
+            "total_requirements": len(state.get("requirements", [])),
+            "testability_score": state.get("quality_metrics", {}).get("testability_score", 85),
+            "total_test_cases": len(state.get("test_cases", [])),
+            "approved_test_cases": len(state.get("approved_test_cases", []))
+        }
+
+        updates = {
+            "traceability": traceability,
+            "llm_trace": llm_trace,
+            "final_results": final_results
+        }
+        merged_state = {**state, **updates}
+        self.save_results(merged_state)
+        logger.info("============================================================")
+        logger.info(f"🏁 PIPELINE RUN COMPLETED. Final Status: {final_results['status']}")
+        logger.info("============================================================")
+        return updates
+
+    # =========================================================================
+    # GRAPH COMPILATION & EXECUTION
+    # =========================================================================
+
+    def build_graph(self):
+        """Construct and compile the LangGraph StateGraph workflow."""
+        workflow = StateGraph(AgentState)
+
+        # Register specialized agent nodes
+        workflow.add_node("site_probe", self._node_site_probe)
+        workflow.add_node("extract_requirements", self._node_extract_requirements)
+        workflow.add_node("validate_requirements", self._node_validate_requirements)
+        workflow.add_node("plan_risk_coverage", self._node_plan_risk_coverage)
+        workflow.add_node("design_tests", self._node_design_tests)
+        workflow.add_node("review_security", self._node_review_security)
+        workflow.add_node("generate_script", self._node_generate_script)
+        workflow.add_node("execute_playwright", self._node_execute_playwright)
+        workflow.add_node("analyze_failure", self._node_analyze_failure)
+        workflow.add_node("finalize", self._node_finalize)
+
+        # Connect edges and cyclical routes
+        workflow.add_edge(START, "site_probe")
+        workflow.add_conditional_edges("site_probe", self._route_after_probe, {
+            "extract_requirements": "extract_requirements",
+            "finalize": "finalize"
+        })
+        workflow.add_edge("extract_requirements", "validate_requirements")
+        workflow.add_edge("validate_requirements", "plan_risk_coverage")
+        workflow.add_edge("plan_risk_coverage", "design_tests")
+        workflow.add_edge("design_tests", "review_security")
+        workflow.add_edge("review_security", "generate_script")
+        workflow.add_edge("generate_script", "execute_playwright")
+
+        workflow.add_conditional_edges("execute_playwright", self._route_after_execution, {
+            "finalize": "finalize",
+            "analyze_failure": "analyze_failure"
+        })
+
+        # Cyclical self-healing edge: loops back to generate_script on recoverable script/locator issues
+        workflow.add_conditional_edges("analyze_failure", self._route_after_failure_analysis, {
+            "generate_script": "generate_script",
+            "finalize": "finalize"
+        })
+
+        workflow.add_edge("finalize", END)
+        return workflow.compile()
+
+    def get_graph_mermaid(self) -> str:
+        """Generate a Mermaid diagram string of the LangGraph workflow."""
+        try:
+            return self.build_graph().get_graph().draw_mermaid()
+        except Exception:
+            return ""
 
     async def run(
         self,
@@ -102,14 +406,9 @@ class AgenticQAPipeline:
         status_callback=None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> AgentState:
-        """Run the complete Agentic QA Pipeline from SRS to Playwright Execution & Retry Loop.
-
-        target_url: the real website / app to test. Empty or "demo" starts the built-in demo app
-        (engine/demo_app.py) for the duration of the run - it is never used as a silent fallback.
-        """
+        """Execute the LangGraph Agentic QA Pipeline."""
         target_url = (target_url or config.TARGET_URL or "").strip()
         if not target_url:
-            # Auto-detect URL from SRS text if present
             url_match = re.search(r"https?://[^\s,;\"'<>]+", srs_text)
             if url_match:
                 target_url = url_match.group(0).rstrip(".,;")
@@ -121,6 +420,7 @@ class AgenticQAPipeline:
             target_url = f"http://127.0.0.1:{port}"
         elif "://" not in target_url:
             target_url = "https://" + target_url
+
         run_dir = os.path.join(config.LOGS_DIR, "runs", datetime.now().strftime("%Y%m%d_%H%M%S"))
         os.makedirs(run_dir, exist_ok=True)
         try:
@@ -132,7 +432,7 @@ class AgenticQAPipeline:
 
     async def _run(self, srs_text, target_url, max_retries, status_callback, metadata, run_dir, target_mode) -> AgentState:
         logger.info("============================================================")
-        logger.info("🚀 STARTING AGENTIC QA PIPELINE EXECUTION")
+        logger.info("🚀 STARTING LANGGRAPH AGENTIC QA PIPELINE EXECUTION")
         if metadata:
             logger.info(f"📄 Document: {metadata.get('title', 'Unknown')} ({metadata.get('domain', 'General')})")
         logger.info(f"🎯 Target: {target_url} ({target_mode})")
@@ -141,162 +441,14 @@ class AgenticQAPipeline:
         state = create_initial_state(srs_text, target_url, metadata)
         state["run_dir"] = run_dir
         state["target_mode"] = target_mode
+        state["max_retries"] = max_retries
 
-        def _update(msg: str, step: int):
-            logger.info(f"[{step}/7] {msg}")
-            if status_callback:
-                status_callback(msg, step, state)
+        self.status_callback = status_callback
+        compiled_graph = self.build_graph()
 
-        # ----------------------------------------------------
-        # Stage 0: Open the real target - is it up, is it healthy, what is on the page?
-        # ----------------------------------------------------
-        _update("Stage 0/7: Opening the target in a real browser and checking its health...", 0)
-        health = await asyncio.to_thread(self.runner.probe_target, target_url, os.path.join(run_dir, "target"), config.HEADLESS)
-        state["target_health"] = health
-        state["target_profile"] = health.get("inventory") or {}
-        if not health.get("reachable"):
-            reason = health.get("error") or "no response"
-            logger.error(f"❌ Target {target_url} is not reachable: {reason}")
-            state["execution_result"] = {"status": "TARGET_UNREACHABLE", "error": f"{target_url} is not reachable: {reason}",
-                                         "stdout": "", "stderr": "", "duration_seconds": 0, "screenshots": []}
-            state["human_review_required"] = True
-            state["human_review_context"] = {"reason": "target_unreachable", "last_error": reason, "total_attempts": 0}
-            state["final_results"] = {
-                "completed_at": datetime.now().isoformat(), "status": "TARGET_UNREACHABLE", "passed": False,
-                "document_title": metadata.get("title") if metadata else "Custom SRS",
-                "domain": metadata.get("domain") if metadata else "General",
-                "total_requirements": 0, "total_test_cases": 0, "approved_test_cases": 0,
-            }
-            self.save_results(state)
-            return state
-        logger.info(f"✅ Target is up: HTTP {health.get('status')}, {health.get('load_ms')} ms, "
-                    f"health score {health.get('score')}/100, {len(state['target_profile'].get('inputs', []))} input field(s) found")
-
-        # ----------------------------------------------------
-        # Stage 1: Requirement Extraction
-        # ----------------------------------------------------
-        _update("Stage 1/7: Extracting testable requirements from SRS...", 1)
-        state = await self.req_extractor.invoke(state)
-
-        # ----------------------------------------------------
-        # Stage 2: Requirement Validation & Ambiguity Detection
-        # ----------------------------------------------------
-        _update("Stage 2/7: Auditing requirements for clarity, ambiguity, and testability...", 2)
-        state = await self.req_validator.invoke(state)
-
-        # ----------------------------------------------------
-        # Stage 3: Risk & Coverage Planning
-        # ----------------------------------------------------
-        _update("Stage 3/7: Analyzing risks and prioritizing automated test suites...", 3)
-        state = await self.risk_planner.invoke(state)
-
-        # ----------------------------------------------------
-        # Stage 4: Test Case Design (BDD & Gherkin)
-        # ----------------------------------------------------
-        _update("Stage 4/7: Designing structured test cases and BDD / Gherkin specifications...", 4)
-        state = await self.test_designer.invoke(state)
-
-        # ----------------------------------------------------
-        # Stage 5: Security Review & OWASP Compliance
-        # ----------------------------------------------------
-        _update("Stage 5/7: Reviewing test cases against OWASP security compliance rules...", 5)
-        state = await self.reviewer.invoke(state)
-
-        # ----------------------------------------------------
-        # Stage 6 & 7: Script Generation & Playwright Sandbox Execution
-        # ----------------------------------------------------
-        _update("Stage 6/7: Generating Playwright automation scripts...", 6)
-        
-        for attempt in range(max_retries):
-            state["retry_count"] = attempt
-            _update(f"Stage 7/7: Executing Playwright Script (Attempt #{attempt + 1}/{max_retries})...", 7)
-
-            # Generate or patch script
-            state = await self.script_generator.invoke(state)
-            current_script = state.get("current_script", "")
-
-            # Execute in sandboxed Playwright engine
-            exec_res = self.runner.execute_script(current_script, script_name=f"test_run_v{attempt + 1}.py",
-                                                  shot_dir=run_dir)
-            state["execution_result"] = exec_res
-
-            # Store per-test-case results (empty list if the run crashed, so stale results never linger)
-            state["test_results"] = exec_res.get("test_results") or []
-
-            if exec_res.get("status") == "PASSED":
-                logger.info(f"✅ EXECUTION SUCCESSFUL on Attempt #{attempt + 1}!")
-                state.setdefault("metrics", {})["passed_scripts"] = state.get("metrics", {}).get("passed_scripts", 0) + 1
-                state["human_review_required"] = False
-                break
-            else:
-                logger.warning(f"⚠️ Execution failed on Attempt #{attempt + 1}: {exec_res.get('error')}")
-                state.setdefault("metrics", {})["failed_scripts"] = state.get("metrics", {}).get("failed_scripts", 0) + 1
-                state["last_error"] = exec_res.get("error")
-                
-                if "retry_history" not in state or state["retry_history"] is None:
-                    state["retry_history"] = []
-                    
-                state["retry_history"].append({
-                    "attempt": attempt + 1,
-                    "error": exec_res.get("error"),
-                    "duration": exec_res.get("duration_seconds")
-                })
-
-                # Always analyze: even on the last attempt it tells the reviewer what failed and why
-                logger.info("⚡ Triggering Failure Analysis Agent...")
-                state = await self.failure_analyzer.invoke(state)
-                analysis = state.get("error_analysis") or {}
-                state["retry_history"][-1]["root_cause"] = analysis.get("root_cause")
-
-                if analysis.get("can_auto_recover", True) and attempt < max_retries - 1:
-                    logger.info("🔧 Failures look script/locator related - retrying with an adjusted script.")
-                    continue
-
-                if attempt < max_retries - 1:
-                    logger.info("🛑 Retrying cannot fix these failures - escalating without further attempts.")
-                else:
-                    logger.error("❌ Max retries reached. Escalating persistent failure to Human Review.")
-                state["human_review_required"] = True
-                state["human_review_context"] = {
-                    "reason": analysis.get("escalation_reason", "persistent_failure"),
-                    "last_error": exec_res.get("error"),
-                    "total_attempts": attempt + 1,
-                    "summary": analysis.get("summary", {}),
-                    "failures": analysis.get("failures", []),
-                    "script": current_script,
-                    "stdout": exec_res.get("stdout"),
-                    "stderr": exec_res.get("stderr"),
-                    "screenshots": exec_res.get("screenshots", [])
-                }
-                state.setdefault("metrics", {})["human_interventions"] = 1
-                break
-
-        # Build requirement → test → execution traceability
-        state["traceability"] = build_traceability(
-            state.get("requirements", []),
-            state.get("test_cases", []),
-            state.get("test_results", [])
-        )
-
-        state["llm_trace"] = self._llm_trace()
-
-        state["final_results"] = {
-            "completed_at": datetime.now().isoformat(),
-            "status": "PASSED" if not state.get("human_review_required") else "REQUIRES_HUMAN_REVIEW",
-            "passed": state.get("execution_result", {}).get("status") == "PASSED",
-            "document_title": metadata.get("title") if metadata else "Custom SRS",
-            "domain": metadata.get("domain") if metadata else "General",
-            "total_requirements": len(state.get("requirements", [])),
-            "testability_score": state.get("quality_metrics", {}).get("testability_score", 85),
-            "total_test_cases": len(state.get("test_cases", [])),
-            "approved_test_cases": len(state.get("approved_test_cases", []))
-        }
-
-        self.save_results(state)
-        logger.info("============================================================")
-        logger.info(f"🏁 PIPELINE RUN COMPLETED. Final Status: {state['final_results']['status']}")
-        logger.info("============================================================")
-        return state
+        # Execute through the compiled LangGraph workflow
+        final_state = await compiled_graph.ainvoke(state)
+        return final_state
 
     def _llm_trace(self):
         """Per-stage summary of which LLM was assigned and which one actually answered."""
@@ -336,9 +488,11 @@ class AgenticQAPipeline:
         except Exception as e:
             logger.error(f"Failed to save pipeline results: {e}")
 
+
 async def run_pipeline(srs_text: str, target_url: str = "", metadata: Optional[Dict[str, Any]] = None) -> AgentState:
     pipeline = AgenticQAPipeline()
     return await pipeline.run(srs_text, target_url, metadata=metadata)
+
 
 if __name__ == "__main__":
     from config import config

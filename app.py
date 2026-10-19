@@ -151,7 +151,7 @@ with st.sidebar:
     st.subheader("Engine Status")
     st.markdown("""
     <div style="background: rgba(255,255,255,0.04); padding: 10px; border-radius: 6px; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.08);">
-        <b>Autonomous Multi-Model Routing: Active</b><br>
+        <b>LangGraph Multi-Agent Engine: Active</b><br>
         <span style="color: #4CAF50;">●</span> High-Speed Reasoning & Auditing (Groq)<br>
         <span style="color: #2196F3;">●</span> Large Context & Test Schemas (Gemini)<br>
         <span style="color: #FF9800;">●</span> Local Diagnostics Fallback (Ollama)
@@ -300,17 +300,41 @@ if state:
     st.divider()
 
     llm_trace = state.get("llm_trace") or []
-    if llm_trace:
-        with st.expander("Model used per stage", expanded=False):
-            st.dataframe([{
-                "Stage": r["stage"].replace("_", " "),
-                "Assigned": r["assigned"],
-                "Answered by": r["answered_by"],
-                "Calls": r["calls"],
-                "Avg seconds": r["avg_seconds"],
-                "Fell back": "yes" if r["fell_back"] else "",
-                "Reason": r["first_error"],
-            } for r in llm_trace], use_container_width=True, hide_index=True)
+    col_exp1, col_exp2 = st.columns(2)
+    with col_exp1:
+        if llm_trace:
+            with st.expander("Model Telemetry per Stage", expanded=False):
+                st.dataframe([{
+                    "Stage": r["stage"].replace("_", " "),
+                    "Assigned": r["assigned"],
+                    "Answered by": r["answered_by"],
+                    "Calls": r["calls"],
+                    "Avg seconds": r["avg_seconds"],
+                    "Fell back": "yes" if r["fell_back"] else "",
+                    "Reason": r["first_error"],
+                } for r in llm_trace], use_container_width=True, hide_index=True)
+    with col_exp2:
+        with st.expander("LangGraph StateGraph Workflow", expanded=False):
+            st.caption("Cyclical multi-agent graph with self-healing conditional edges:")
+            st.markdown("""
+```mermaid
+graph TD
+    START([START]) --> site_probe[Stage 0: Live Site Probe]
+    site_probe -->|Reachable| extract_req[Stage 1: Extract Requirements]
+    site_probe -->|Unreachable| finalize[Finalize & Persist]
+    extract_req --> validate_req[Stage 2: Validate Requirements]
+    validate_req --> risk_plan[Stage 3: Risk & Coverage Planning]
+    risk_plan --> design_tests[Stage 4: Test Design & BDD]
+    design_tests --> review_sec[Stage 5: OWASP Security Review]
+    review_sec --> gen_script[Stage 6: Playwright Script Gen]
+    gen_script --> exec_pw[Stage 7: Sandboxed Playwright Run]
+    exec_pw -->|Passed| finalize
+    exec_pw -->|Failed| analyze_fail[Failure Analysis Agent]
+    analyze_fail -->|Recoverable Locator Issue| gen_script
+    analyze_fail -->|Application Defect / Max Retries| finalize
+    finalize --> END([END])
+```
+            """)
 
     # ==============================================================================
     # MULTI-TAB DETAILED ANALYTICS
